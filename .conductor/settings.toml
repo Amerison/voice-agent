@@ -11,5 +11,5 @@ icon = "server"
 
 [scripts.run.ios]
 available_in = [ "local" ]
-command = "flutter run --dart-define=API_BASE_URL=http://127.0.0.1:${CONDUCTOR_PORT:-8080}"
+command = "set -a; source .env; set +a; flutter run --dart-define=API_BASE_URL=http://127.0.0.1:${CONDUCTOR_PORT:-8080} --dart-define=VAPI_PUBLIC_KEY=$VAPI_PUBLIC_KEY"
 icon = "smartphone"

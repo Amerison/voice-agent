@@ -31,7 +31,7 @@ void main() {
     await tester.pumpWidget(VoiceAgentApp(controller: controller));
     await tester.pumpAndSettle();
 
-    expect(find.text('Deploy Maya'), findsOneWidget);
+    expect(find.text('Test Maya'), findsOneWidget);
     await tester.tap(find.text('CRM'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Avery Chen'));
@@ -40,5 +40,59 @@ void main() {
     expect(find.text('Activity'), findsOneWidget);
     expect(find.text('About'), findsOneWidget);
     expect(find.text('Contact created'), findsOneWidget);
+  });
+
+  testWidgets('uses the requested home navigation and drawer routes', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final controller = AppController(LocalWorkspaceRepository(preferences));
+    await controller.initialize();
+    await controller.completeOnboarding();
+
+    await tester.pumpWidget(VoiceAgentApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Train'), findsOneWidget);
+    expect(find.text('CRM'), findsOneWidget);
+    expect(find.text('Identity'), findsNothing);
+    expect(find.textContaining('Here’s what’s happening'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Identity'), findsOneWidget);
+    expect(find.text('Deploy'), findsOneWidget);
+    expect(find.text('Calls'), findsAtLeastNWidgets(1));
+
+    await tester.tap(find.text('Identity'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Shape who answers the phone and how they sound.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('opens the near-full-screen voice test experience', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final controller = AppController(LocalWorkspaceRepository(preferences));
+    await controller.initialize();
+    await controller.completeOnboarding();
+
+    await tester.pumpWidget(VoiceAgentApp(controller: controller));
+    await tester.pump();
+    await tester.tap(find.text('Test Maya'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('LIVE VOICE TEST'), findsOneWidget);
+    expect(find.text('Couldn’t start the test'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

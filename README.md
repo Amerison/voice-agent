@@ -40,8 +40,14 @@ In another terminal, start the iOS app against it:
 
 ```sh
 flutter pub get
-flutter run --dart-define=API_BASE_URL=http://127.0.0.1:8080
+flutter run \
+  --dart-define=API_BASE_URL=http://127.0.0.1:8080 \
+  --dart-define=VAPI_PUBLIC_KEY="$VAPI_PUBLIC_KEY"
 ```
+
+`VAPI_PUBLIC_KEY` is Vapi's client-safe public key and powers the in-app voice
+test. Allow the synced assistant and enable transient assistants on that key so
+unsynced drafts can be tested too. Keep `VAPI_PRIVATE_KEY` on the server only.
 
 Run without `API_BASE_URL` to use local demo mode:
 

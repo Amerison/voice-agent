@@ -8,6 +8,7 @@ import 'contact_screens.dart';
 import 'models.dart';
 import 'repository.dart';
 import 'theme.dart';
+import 'voice_test_sheet.dart';
 import 'widgets.dart';
 
 class LaunchScreen extends StatelessWidget {
@@ -188,15 +189,13 @@ class _Destination {
   final IconData icon;
 }
 
-const _destinations = [
-  _Destination('Identity', CupertinoIcons.person_crop_circle),
+const _bottomDestinations = [
+  _Destination('Home', CupertinoIcons.house),
   _Destination('Train', CupertinoIcons.book),
-  _Destination('Analyze', CupertinoIcons.chart_bar),
-  _Destination('Deploy', CupertinoIcons.rocket),
   _Destination('CRM', CupertinoIcons.person_crop_rectangle),
 ];
 
-const _deployIndex = 3;
+enum _WorkspaceRoute { home, train, crm, identity, deploy, calls }
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({super.key, required this.controller});
@@ -208,28 +207,38 @@ class WorkspaceScreen extends StatefulWidget {
 }
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
-  int _index = 0;
+  _WorkspaceRoute _route = _WorkspaceRoute.home;
+  int _bottomIndex = 0;
 
-  void _select(int index) => setState(() => _index = index);
+  void _selectBottom(int index) => setState(() {
+    _bottomIndex = index;
+    _route = switch (index) {
+      0 => _WorkspaceRoute.home,
+      1 => _WorkspaceRoute.train,
+      _ => _WorkspaceRoute.crm,
+    };
+  });
+
+  void _selectRoute(_WorkspaceRoute route) => setState(() => _route = route);
 
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
-    final agent = controller.data.agent;
     final pages = [
-      IdentityScreen(controller: controller),
+      HomeScreen(controller: controller),
       TrainScreen(controller: controller),
-      AnalyzeScreen(controller: controller),
-      DeployScreen(controller: controller),
       CrmScreen(controller: controller),
+      IdentityScreen(controller: controller),
+      DeployScreen(controller: controller),
+      CallsScreen(controller: controller),
     ];
     return Scaffold(
       drawer: _WorkspaceDrawer(
         controller: controller,
-        selectedIndex: _index,
-        onSelect: (index) {
+        selectedRoute: _route,
+        onSelect: (route) {
           Navigator.pop(context);
-          _select(index);
+          _selectRoute(route);
         },
       ),
       appBar: AppBar(
@@ -270,33 +279,25 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             ),
           if (controller.isBusy) const LinearProgressIndicator(minHeight: 2),
           Expanded(
-            child: IndexedStack(index: _index, children: pages),
+            child: IndexedStack(index: _route.index, children: pages),
           ),
         ],
       ),
-      floatingActionButton: _index == _deployIndex && agent.phoneNumber == null
-          ? null
-          : BreezeButton(
-              label: agent.phoneNumber == null
-                  ? 'Deploy ${agent.name}'
-                  : 'Call ${agent.name}',
-              icon: agent.phoneNumber == null
-                  ? CupertinoIcons.sparkles
-                  : CupertinoIcons.phone,
-              onPressed: agent.phoneNumber == null
-                  ? () => _select(_deployIndex)
-                  : () =>
-                        launchUrl(Uri(scheme: 'tel', path: agent.phoneNumber)),
-            ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: BreezeButton(
+        label: 'Test ${controller.data.agent.name}',
+        icon: CupertinoIcons.waveform,
+        onPressed: () => showVoiceTestSheet(context, controller),
+      ),
       bottomNavigationBar: DecoratedBox(
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: HubColors.border)),
         ),
         child: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: _select,
+          selectedIndex: _bottomIndex,
+          onDestinationSelected: _selectBottom,
           destinations: [
-            for (final destination in _destinations)
+            for (final destination in _bottomDestinations)
               NavigationDestination(
                 icon: Icon(destination.icon),
                 label: destination.label,
@@ -311,13 +312,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 class _WorkspaceDrawer extends StatelessWidget {
   const _WorkspaceDrawer({
     required this.controller,
-    required this.selectedIndex,
+    required this.selectedRoute,
     required this.onSelect,
   });
 
   final AppController controller;
-  final int selectedIndex;
-  final ValueChanged<int> onSelect;
+  final _WorkspaceRoute selectedRoute;
+  final ValueChanged<_WorkspaceRoute> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -332,12 +333,24 @@ class _WorkspaceDrawer extends StatelessWidget {
             _ExperienceCard(onTap: () => _pickAgentType(context)),
             const SizedBox(height: 10),
             const _DrawerSectionLabel('Agent'),
-            for (final index in const [0, 1, 3])
-              _DrawerItem(
-                destination: _destinations[index],
-                selected: selectedIndex == index,
-                onTap: () => onSelect(index),
+            _DrawerItem(
+              destination: const _Destination(
+                'Identity',
+                CupertinoIcons.person_crop_circle,
               ),
+              selected: selectedRoute == _WorkspaceRoute.identity,
+              onTap: () => onSelect(_WorkspaceRoute.identity),
+            ),
+            _DrawerItem(
+              destination: _bottomDestinations[1],
+              selected: selectedRoute == _WorkspaceRoute.train,
+              onTap: () => onSelect(_WorkspaceRoute.train),
+            ),
+            _DrawerItem(
+              destination: const _Destination('Deploy', CupertinoIcons.rocket),
+              selected: selectedRoute == _WorkspaceRoute.deploy,
+              onTap: () => onSelect(_WorkspaceRoute.deploy),
+            ),
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8, horizontal: 6),
               child: Divider(),
@@ -346,17 +359,17 @@ class _WorkspaceDrawer extends StatelessWidget {
             _DrawerItem(
               destination: const _Destination('Calls', CupertinoIcons.phone),
               trailing: '${controller.data.calls.length}',
-              selected: selectedIndex == 2,
-              onTap: () => onSelect(2),
+              selected: selectedRoute == _WorkspaceRoute.calls,
+              onTap: () => onSelect(_WorkspaceRoute.calls),
             ),
             _DrawerItem(
               destination: const _Destination(
-                'Contacts',
+                'CRM',
                 CupertinoIcons.person_crop_rectangle,
               ),
               trailing: '${controller.data.contacts.length}',
-              selected: selectedIndex == 4,
-              onTap: () => onSelect(4),
+              selected: selectedRoute == _WorkspaceRoute.crm,
+              onTap: () => onSelect(_WorkspaceRoute.crm),
             ),
           ],
         ),
@@ -1044,8 +1057,8 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
-class AnalyzeScreen extends StatelessWidget {
-  const AnalyzeScreen({super.key, required this.controller});
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key, required this.controller});
 
   final AppController controller;
 
@@ -1054,11 +1067,19 @@ class AnalyzeScreen extends StatelessWidget {
     final now = DateTime.now();
     final calls = [...controller.data.calls]
       ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    final meetings =
+        controller.data.meetings
+            .where((meeting) => meeting.startsAt.isAfter(now))
+            .toList()
+          ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
     final resolved = calls.where((call) => call.resolved).length;
+    final qualified = controller.data.contacts
+        .where((contact) => contact.leadStatus == 'Qualified')
+        .length;
     return HubPage(
       eyebrow: formatLongDate(now),
       headline:
-          '${greetingFor(now)}. Here’s how ${controller.data.agent.name}’s calls went.',
+          '${greetingFor(now)}. Here’s what’s happening with ${controller.data.agent.name}.',
       children: [
         Row(
           children: [
@@ -1082,9 +1103,91 @@ class AnalyzeScreen extends StatelessWidget {
           ],
         ),
         HubCard(
+          icon: CupertinoIcons.chart_bar,
+          title: 'Report',
+          detail: 'latest performance',
+          child: Column(
+            children: [
+              _OverviewRow(
+                icon: CupertinoIcons.person_2,
+                label: 'Qualified leads',
+                value: '$qualified',
+              ),
+              const Divider(),
+              _OverviewRow(
+                icon: CupertinoIcons.calendar,
+                label: 'Upcoming meetings',
+                value: '${meetings.length}',
+              ),
+              const Divider(),
+              _OverviewRow(
+                icon: CupertinoIcons.person_badge_plus,
+                label: 'CRM contacts',
+                value: '${controller.data.contacts.length}',
+              ),
+            ],
+          ),
+        ),
+        HubCard(
           icon: CupertinoIcons.phone,
-          title: 'Review',
-          detail: 'recent calls',
+          title: 'Incoming calls',
+          detail: 'recent activity',
+          child: calls.isEmpty
+              ? const HubEmptyState(
+                  icon: CupertinoIcons.phone,
+                  title: 'You have no calls',
+                  message: 'Calls will appear here after they end.',
+                )
+              : Column(
+                  children: [
+                    for (var i = 0; i < calls.take(3).length; i++) ...[
+                      if (i > 0) const Divider(),
+                      _CallRow(call: calls[i]),
+                    ],
+                  ],
+                ),
+        ),
+        HubCard(
+          icon: CupertinoIcons.calendar,
+          title: 'Meetings',
+          detail: 'coming up',
+          child: meetings.isEmpty
+              ? const HubEmptyState(
+                  icon: CupertinoIcons.calendar,
+                  title: 'Nothing scheduled',
+                  message: 'Meetings booked by the agent will appear here.',
+                )
+              : Column(
+                  children: [
+                    for (var i = 0; i < meetings.take(3).length; i++) ...[
+                      if (i > 0) const Divider(),
+                      _MeetingRow(meeting: meetings[i]),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class CallsScreen extends StatelessWidget {
+  const CallsScreen({super.key, required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final calls = [...controller.data.calls]
+      ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+    return HubPage(
+      eyebrow: 'Calls',
+      headline: 'Review every conversation and its outcome.',
+      children: [
+        HubCard(
+          icon: CupertinoIcons.phone,
+          title: 'Call history',
+          detail: '${calls.length} total',
           child: calls.isEmpty
               ? const HubEmptyState(
                   icon: CupertinoIcons.phone,
@@ -1101,6 +1204,72 @@ class AnalyzeScreen extends StatelessWidget {
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _OverviewRow extends StatelessWidget {
+  const _OverviewRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: HubColors.textMuted),
+          const SizedBox(width: 12),
+          Expanded(child: Text(label)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MeetingRow extends StatelessWidget {
+  const _MeetingRow({required this.meeting});
+
+  final Meeting meeting;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          const IconBadge(icon: CupertinoIcons.calendar),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  meeting.contactName,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  formatTimestamp(meeting.startsAt),
+                  style: const TextStyle(color: HubColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+          HubPill(label: meeting.status, tone: PillTone.accent),
+        ],
+      ),
     );
   }
 }
