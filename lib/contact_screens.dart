@@ -56,15 +56,25 @@ class _CrmScreenState extends State<CrmScreen> {
           ),
         ),
         const SizedBox(height: 22),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
-            '${data.contacts.length} contacts and ${data.meetings.length} upcoming meetings.',
-            style: Theme.of(context).textTheme.headlineMedium,
+        if (data.contacts.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              '${data.contacts.length} contacts and ${data.meetings.length} upcoming meetings.',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
           ),
-        ),
-        const SizedBox(height: 22),
-        if (contacts.isEmpty)
+          const SizedBox(height: 22),
+        ],
+        if (data.contacts.isEmpty)
+          HubEmptyState(
+            icon: CupertinoIcons.person_crop_rectangle,
+            title: 'You have no contacts',
+            message: 'Add a contact to start your CRM.',
+            actionLabel: 'Create contact',
+            onAction: () => editContact(context, widget.controller),
+          )
+        else if (contacts.isEmpty)
           const HubEmptyState(
             icon: CupertinoIcons.search,
             title: 'No contacts found',
@@ -500,11 +510,9 @@ Future<void> editContact(
   AppController controller, [
   Contact? contact,
 ]) async {
-  final result = await showModalBottomSheet<_ContactResult>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (_) => _ContactEditor(contact: contact),
+  final result = await showHubEditor<_ContactResult>(
+    context,
+    _ContactEditor(contact: contact),
   );
   if (result == null) return;
   if (result.delete && contact != null) {
@@ -577,97 +585,86 @@ class _ContactEditorState extends State<_ContactEditor> {
 
   @override
   Widget build(BuildContext context) {
-    return FractionallySizedBox(
-      heightFactor: .96,
-      child: Column(
+    return HubEditorPage(
+      title: widget.contact == null ? 'New contact' : 'Edit contact',
+      doneLabel: 'Save',
+      onDone: _save,
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          MediaQuery.viewInsetsOf(context).bottom + 28,
+        ),
         children: [
-          HubSheetHeader(
-            title: widget.contact == null ? 'New contact' : 'Edit contact',
-            doneLabel: 'Save',
-            onDone: _save,
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: 'Name'),
           ),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                16,
-                16,
-                MediaQuery.viewInsetsOf(context).bottom + 28,
-              ),
-              children: [
-                TextField(
-                  controller: _name,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _phone,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Phone'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Email'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _company,
-                  decoration: const InputDecoration(labelText: 'Company'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _title,
-                  decoration: const InputDecoration(labelText: 'Job title'),
-                ),
-                const SizedBox(height: 12),
-                HubSelectField(
-                  label: 'Lead status',
-                  value: _status,
-                  onTap: () => _pick(
-                    title: 'Lead status',
-                    values: _leadStatuses,
-                    current: _status,
-                    onPicked: (value) => _status = value,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                HubSelectField(
-                  label: 'Budget range',
-                  value: _budget,
-                  onTap: () => _pick(
-                    title: 'Budget range',
-                    values: _budgetRanges,
-                    current: _budget,
-                    onPicked: (value) => _budget = value,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _notes,
-                  minLines: 3,
-                  maxLines: 6,
-                  decoration: const InputDecoration(labelText: 'Notes'),
-                ),
-                if (widget.contact != null) ...[
-                  const SizedBox(height: 24),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: HubColors.danger,
-                      side: const BorderSide(color: HubColors.danger),
-                    ),
-                    onPressed: () => Navigator.pop(
-                      context,
-                      const _ContactResult(delete: true),
-                    ),
-                    icon: const Icon(CupertinoIcons.trash, size: 18),
-                    label: const Text('Delete contact'),
-                  ),
-                ],
-              ],
+          const SizedBox(height: 12),
+          TextField(
+            controller: _phone,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'Phone'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(labelText: 'Email'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _company,
+            decoration: const InputDecoration(labelText: 'Company'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: 'Job title'),
+          ),
+          const SizedBox(height: 12),
+          HubSelectField(
+            label: 'Lead status',
+            value: _status,
+            onTap: () => _pick(
+              title: 'Lead status',
+              values: _leadStatuses,
+              current: _status,
+              onPicked: (value) => _status = value,
             ),
           ),
+          const SizedBox(height: 12),
+          HubSelectField(
+            label: 'Budget range',
+            value: _budget,
+            onTap: () => _pick(
+              title: 'Budget range',
+              values: _budgetRanges,
+              current: _budget,
+              onPicked: (value) => _budget = value,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _notes,
+            minLines: 3,
+            maxLines: 6,
+            decoration: const InputDecoration(labelText: 'Notes'),
+          ),
+          if (widget.contact != null) ...[
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: HubColors.danger,
+                side: const BorderSide(color: HubColors.danger),
+              ),
+              onPressed: () =>
+                  Navigator.pop(context, const _ContactResult(delete: true)),
+              icon: const Icon(CupertinoIcons.trash, size: 18),
+              label: const Text('Delete contact'),
+            ),
+          ],
         ],
       ),
     );

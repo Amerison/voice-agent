@@ -4,6 +4,20 @@ enum KnowledgeKind { webpage, shortAnswer }
 
 enum SyncStatus { draft, syncing, ready, failed }
 
+enum AgentType {
+  leadQualification,
+  customerSupport,
+  outboundCalling;
+
+  String get label => switch (this) {
+    leadQualification => 'Lead qualification',
+    customerSupport => 'Customer support',
+    outboundCalling => 'Outbound calling',
+  };
+
+  bool get isAvailable => this == leadQualification;
+}
+
 class KnowledgeSource {
   const KnowledgeSource({
     required this.id,
@@ -40,6 +54,7 @@ class KnowledgeSource {
 class AgentConfig {
   const AgentConfig({
     required this.id,
+    this.type = AgentType.leadQualification,
     required this.name,
     required this.friendliness,
     required this.persona,
@@ -60,6 +75,7 @@ class AgentConfig {
   });
 
   final String id;
+  final AgentType type;
   final String name;
   final Friendliness friendliness;
   final String persona;
@@ -79,6 +95,7 @@ class AgentConfig {
   final String? syncError;
 
   AgentConfig copyWith({
+    AgentType? type,
     String? name,
     Friendliness? friendliness,
     String? persona,
@@ -99,6 +116,7 @@ class AgentConfig {
     bool clearSyncError = false,
   }) => AgentConfig(
     id: id,
+    type: type ?? this.type,
     name: name ?? this.name,
     friendliness: friendliness ?? this.friendliness,
     persona: persona ?? this.persona,
@@ -121,7 +139,7 @@ class AgentConfig {
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'type': 'leadQualification',
+    'type': type.name,
     'name': name,
     'friendliness': friendliness.name,
     'persona': persona,
@@ -143,6 +161,9 @@ class AgentConfig {
 
   factory AgentConfig.fromJson(Map<String, dynamic> json) => AgentConfig(
     id: json['id'] as String,
+    type:
+        AgentType.values.asNameMap()[json['type'] as String?] ??
+        AgentType.leadQualification,
     name: json['name'] as String,
     friendliness: Friendliness.values.byName(json['friendliness'] as String),
     persona: json['persona'] as String,

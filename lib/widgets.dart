@@ -458,6 +458,52 @@ class _RingIllustration extends StatelessWidget {
   }
 }
 
+/// Full-screen HubSpot editor: Cancel · serif title · Done, covering the app.
+class HubEditorPage extends StatelessWidget {
+  const HubEditorPage({
+    super.key,
+    required this.title,
+    required this.onDone,
+    required this.body,
+    this.doneLabel = 'Done',
+  });
+
+  final String title;
+  final String doneLabel;
+  final VoidCallback? onDone;
+  final Widget body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: HubColors.background,
+      body: Column(
+        children: [
+          Material(
+            color: HubColors.surface,
+            child: SafeArea(
+              bottom: false,
+              child: HubSheetHeader(
+                title: title,
+                doneLabel: doneLabel,
+                onDone: onDone,
+              ),
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      ),
+    );
+  }
+}
+
+Future<T?> showHubEditor<T>(BuildContext context, Widget page) {
+  return Navigator.of(
+    context,
+    rootNavigator: true,
+  ).push<T>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => page));
+}
+
 /// "Cancel · Serif title · Done" header used by HubSpot's modal sheets.
 class HubSheetHeader extends StatelessWidget {
   const HubSheetHeader({

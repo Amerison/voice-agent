@@ -45,66 +45,258 @@ class LaunchScreen extends StatelessWidget {
   }
 }
 
-class OnboardingScreen extends StatelessWidget {
+class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key, required this.controller});
 
   final AppController controller;
+
+  @override
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends State<OnboardingScreen> {
+  var _step = 0;
+  var _type = AgentType.leadQualification;
+  var _friendliness = Friendliness.friendly;
+  late final TextEditingController _name;
+  late final TextEditingController _company;
+  late final TextEditingController _description;
+  late final TextEditingController _greeting;
+
+  @override
+  void initState() {
+    super.initState();
+    final agent = widget.controller.data.agent;
+    _type = agent.type;
+    _friendliness = agent.friendliness;
+    _name = TextEditingController(text: agent.name);
+    _company = TextEditingController(text: agent.companyName);
+    _description = TextEditingController(text: agent.companyDescription);
+    _greeting = TextEditingController(text: agent.greeting);
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _company.dispose();
+    _description.dispose();
+    _greeting.dispose();
+    super.dispose();
+  }
+
+  String get _headline => switch (_step) {
+    0 => 'What should your\nagent do?',
+    1 => 'Tell us about\nyour company.',
+    _ => 'Name the voice\ncallers will hear.',
+  };
+
+  String get _subtitle => switch (_step) {
+    0 =>
+      'Start with a proven playbook. You can shape the voice, knowledge, and behavior next.',
+    1 => 'This is who the agent represents. You can refine it later.',
+    _ => 'A name and greeting are enough to start testing.',
+  };
+
+  String get _suggestedGreeting {
+    final name = _name.text.trim().isEmpty ? 'your agent' : _name.text.trim();
+    final company = _company.text.trim().isEmpty
+        ? 'our team'
+        : _company.text.trim();
+    return 'Hi, you’ve reached $name at $company. How can I help today?';
+  }
+
+  Future<void> _next() async {
+    if (_step == 0) {
+      setState(() => _step = 1);
+      return;
+    }
+    if (_step == 1) {
+      if (_company.text.trim().isEmpty) {
+        showHubMessage(context, 'Company name is required.');
+        return;
+      }
+      if (_greeting.text.trim().isEmpty) {
+        _greeting.text = _suggestedGreeting;
+      }
+      setState(() => _step = 2);
+      return;
+    }
+    if (_name.text.trim().isEmpty) {
+      showHubMessage(context, 'Agent name is required.');
+      return;
+    }
+    var greeting = _greeting.text.trim();
+    if (greeting.isEmpty) greeting = _suggestedGreeting;
+    await widget.controller.completeOnboarding(
+      agent: widget.controller.data.agent.copyWith(
+        type: _type,
+        name: _name.text.trim(),
+        companyName: _company.text.trim(),
+        companyDescription: _description.text.trim(),
+        greeting: greeting,
+        friendliness: _friendliness,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return Scaffold(
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 28, 20, 36),
+        child: Column(
           children: [
-            const Align(alignment: Alignment.centerLeft, child: BrandMark()),
-            const SizedBox(height: 32),
-            Text(formatLongDate(DateTime.now()), style: textTheme.labelSmall),
-            const SizedBox(height: 10),
-            Text('What should your\nagent do?', style: textTheme.displaySmall),
-            const SizedBox(height: 12),
-            Text(
-              'Start with a proven playbook. You can shape the voice, knowledge, and behavior next.',
-              style: textTheme.bodyLarge?.copyWith(color: HubColors.textMuted),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
+              child: Row(
+                children: [
+                  if (_step > 0)
+                    IconButton(
+                      tooltip: 'Back',
+                      onPressed: () => setState(() => _step -= 1),
+                      icon: const Icon(CupertinoIcons.chevron_left),
+                    )
+                  else
+                    const SizedBox(width: 48),
+                  const Spacer(),
+                  Text('STEP ${_step + 1} OF 3', style: textTheme.labelSmall),
+                ],
+              ),
             ),
-            const SizedBox(height: 28),
-            const _AgentTypeCard(
-              icon: CupertinoIcons.person_crop_circle_badge_checkmark,
-              title: 'Lead qualification',
-              description:
-                  'Qualify inbound prospects and book the right next step.',
-              selected: true,
-              badge: 'Available',
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                children: [
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: BrandMark(),
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    formatLongDate(DateTime.now()),
+                    style: textTheme.labelSmall,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(_headline, style: textTheme.displaySmall),
+                  const SizedBox(height: 12),
+                  Text(
+                    _subtitle,
+                    style: textTheme.bodyLarge?.copyWith(
+                      color: HubColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  ..._stepBody(context),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            const _AgentTypeCard(
-              icon: CupertinoIcons.headphones,
-              title: 'Customer support',
-              description: 'Answer questions and resolve customer issues.',
-              badge: 'Next',
-              disabled: true,
-            ),
-            const SizedBox(height: 12),
-            const _AgentTypeCard(
-              icon: CupertinoIcons.phone_arrow_up_right,
-              title: 'Outbound calling',
-              description: 'Reach leads and customers proactively.',
-              badge: 'Coming soon',
-              disabled: true,
-            ),
-            const SizedBox(height: 28),
-            FilledButton.icon(
-              onPressed: controller.isBusy
-                  ? null
-                  : controller.completeOnboarding,
-              icon: const Icon(CupertinoIcons.arrow_right, size: 20),
-              label: const Text('Build my agent'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: widget.controller.isBusy ? null : _next,
+                  icon: const Icon(CupertinoIcons.arrow_right, size: 20),
+                  label: Text(_step == 2 ? 'Build my agent' : 'Continue'),
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  List<Widget> _stepBody(BuildContext context) {
+    if (_step == 0) {
+      return [
+        _AgentTypeCard(
+          icon: CupertinoIcons.person_crop_circle_badge_checkmark,
+          title: AgentType.leadQualification.label,
+          description:
+              'Qualify inbound prospects and book the right next step.',
+          selected: _type == AgentType.leadQualification,
+          badge: 'Available',
+          onTap: () => setState(() => _type = AgentType.leadQualification),
+        ),
+        const SizedBox(height: 12),
+        _AgentTypeCard(
+          icon: CupertinoIcons.headphones,
+          title: AgentType.customerSupport.label,
+          description: 'Answer questions and resolve customer issues.',
+          badge: 'Next',
+          disabled: true,
+        ),
+        const SizedBox(height: 12),
+        _AgentTypeCard(
+          icon: CupertinoIcons.phone_arrow_up_right,
+          title: AgentType.outboundCalling.label,
+          description: 'Reach leads and customers proactively.',
+          badge: 'Coming soon',
+          disabled: true,
+        ),
+      ];
+    }
+    if (_step == 1) {
+      return [
+        TextField(
+          controller: _company,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Company name'),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _description,
+          minLines: 3,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            labelText: 'What does the company do?',
+            hintText: 'Optional — you can add this later.',
+          ),
+        ),
+      ];
+    }
+    return [
+      TextField(
+        controller: _name,
+        textCapitalization: TextCapitalization.words,
+        decoration: const InputDecoration(labelText: 'Agent name'),
+      ),
+      const SizedBox(height: 16),
+      Text('Friendliness', style: TextStyle(color: HubColors.textMuted)),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<Friendliness>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(
+              value: Friendliness.professional,
+              label: Text('Professional'),
+            ),
+            ButtonSegment(value: Friendliness.neutral, label: Text('Neutral')),
+            ButtonSegment(
+              value: Friendliness.friendly,
+              label: Text('Friendly'),
+            ),
+          ],
+          selected: {_friendliness},
+          onSelectionChanged: (value) =>
+              setState(() => _friendliness = value.first),
+        ),
+      ),
+      const SizedBox(height: 16),
+      TextField(
+        controller: _greeting,
+        minLines: 2,
+        maxLines: 4,
+        decoration: InputDecoration(
+          labelText: 'Greeting',
+          hintText: _suggestedGreeting,
+          helperText: 'The first line callers hear.',
+        ),
+      ),
+    ];
   }
 }
 
@@ -116,6 +308,7 @@ class _AgentTypeCard extends StatelessWidget {
     required this.badge,
     this.selected = false,
     this.disabled = false,
+    this.onTap,
   });
 
   final IconData icon;
@@ -124,58 +317,65 @@ class _AgentTypeCard extends StatelessWidget {
   final String badge;
   final bool selected;
   final bool disabled;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Opacity(
       opacity: disabled ? .5 : 1,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: HubColors.surface,
+      child: Material(
+        color: HubColors.surface,
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
+          side: BorderSide(
             color: selected ? HubColors.orange : HubColors.border,
             width: selected ? 1.5 : 1,
           ),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            IconBadge(
-              icon: icon,
-              size: 44,
-              color: selected ? HubColors.orange : HubColors.background,
-              iconColor: selected ? Colors.white : HubColors.text,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: disabled ? null : onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IconBadge(
+                  icon: icon,
+                  size: 44,
+                  color: selected ? HubColors.orange : HubColors.background,
+                  iconColor: selected ? Colors.white : HubColors.text,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          HubPill(
+                            label: badge,
+                            tone: selected ? PillTone.accent : PillTone.neutral,
+                          ),
+                        ],
                       ),
-                      HubPill(
-                        label: badge,
-                        tone: selected ? PillTone.accent : PillTone.neutral,
+                      const SizedBox(height: 5),
+                      Text(
+                        description,
+                        style: TextStyle(color: HubColors.textMuted),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 5),
-                  Text(
-                    description,
-                    style: TextStyle(color: HubColors.textMuted),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -262,16 +462,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             icon: const Icon(CupertinoIcons.line_horizontal_3, size: 26),
           ),
         ),
-        actions: _route == _WorkspaceRoute.crm
-            ? null
-            : [
-                IconButton(
-                  tooltip: 'Create',
-                  onPressed: () => _showQuickCreate(context, controller),
-                  icon: const Icon(CupertinoIcons.add, size: 26),
-                ),
-                const SizedBox(width: 4),
-              ],
+        actions: [
+          IconButton(
+            tooltip: 'Create',
+            onPressed: () => _showQuickCreate(context, controller),
+            icon: const Icon(CupertinoIcons.add, size: 26),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: Column(
         children: [
@@ -290,7 +488,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: BreezeButton(
-        label: 'Test ${controller.data.agent.name}',
+        label: controller.data.agent.name.trim().isEmpty
+            ? 'Test agent'
+            : 'Test ${controller.data.agent.name}',
         icon: CupertinoIcons.waveform,
         onPressed: () => showVoiceTestSheet(context, controller),
       ),
@@ -335,9 +535,11 @@ class _WorkspaceDrawer extends StatelessWidget {
           children: [
             _DrawerAccount(agent: agent),
             const SizedBox(height: 18),
-            _ExperienceCard(onTap: () => _pickAgentType(context)),
+            _ExperienceCard(
+              typeLabel: agent.type.label,
+              onTap: () => _pickAgentType(context),
+            ),
             const SizedBox(height: 10),
-            const _DrawerSectionLabel('Agent'),
             _DrawerItem(
               destination: const _Destination(
                 'Identity',
@@ -360,10 +562,11 @@ class _WorkspaceDrawer extends StatelessWidget {
               padding: EdgeInsets.symmetric(vertical: 8, horizontal: 6),
               child: Divider(),
             ),
-            const _DrawerSectionLabel('CRM'),
             _DrawerItem(
               destination: const _Destination('Calls', CupertinoIcons.phone),
-              trailing: '${controller.data.calls.length}',
+              trailing: controller.data.calls.isEmpty
+                  ? null
+                  : '${controller.data.calls.length}',
               selected: selectedRoute == _WorkspaceRoute.calls,
               onTap: () => onSelect(_WorkspaceRoute.calls),
             ),
@@ -372,7 +575,9 @@ class _WorkspaceDrawer extends StatelessWidget {
                 'CRM',
                 CupertinoIcons.person_crop_rectangle,
               ),
-              trailing: '${controller.data.contacts.length}',
+              trailing: controller.data.contacts.isEmpty
+                  ? null
+                  : '${controller.data.contacts.length}',
               selected: selectedRoute == _WorkspaceRoute.crm,
               onTap: () => onSelect(_WorkspaceRoute.crm),
             ),
@@ -391,31 +596,33 @@ class _WorkspaceDrawer extends StatelessWidget {
     );
   }
 
-  Future<void> _pickAgentType(BuildContext context) {
-    return showHubPicker<String>(
+  Future<void> _pickAgentType(BuildContext context) async {
+    final value = await showHubPicker<AgentType>(
       context,
       title: 'Agent type',
-      selected: 'lead',
-      options: const [
+      selected: controller.data.agent.type,
+      options: [
         HubPickerOption(
-          value: 'lead',
-          label: 'Lead qualification',
+          value: AgentType.leadQualification,
+          label: AgentType.leadQualification.label,
           subtitle: 'Qualify inbound prospects and book meetings',
         ),
         HubPickerOption(
-          value: 'support',
-          label: 'Customer support',
+          value: AgentType.customerSupport,
+          label: AgentType.customerSupport.label,
           subtitle: 'Coming next',
           enabled: false,
         ),
         HubPickerOption(
-          value: 'outbound',
-          label: 'Outbound calling',
+          value: AgentType.outboundCalling,
+          label: AgentType.outboundCalling.label,
           subtitle: 'Coming soon',
           enabled: false,
         ),
       ],
     );
+    if (value == null) return;
+    await controller.updateAgent(controller.data.agent.copyWith(type: value));
   }
 }
 
@@ -480,7 +687,11 @@ class _DrawerAccount extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${agent.name} · ${agent.companyName}',
+                [
+                  if (agent.name.trim().isNotEmpty) agent.name.trim(),
+                  if (agent.companyName.trim().isNotEmpty)
+                    agent.companyName.trim(),
+                ].join(' · '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -501,8 +712,9 @@ class _DrawerAccount extends StatelessWidget {
 }
 
 class _ExperienceCard extends StatelessWidget {
-  const _ExperienceCard({required this.onTap});
+  const _ExperienceCard({required this.typeLabel, required this.onTap});
 
+  final String typeLabel;
   final VoidCallback onTap;
 
   @override
@@ -531,7 +743,7 @@ class _ExperienceCard extends StatelessWidget {
                         color: HubColors.textMuted,
                       ),
                     ),
-                    Text('Lead qualification', style: TextStyle(fontSize: 16)),
+                    Text(typeLabel, style: const TextStyle(fontSize: 16)),
                   ],
                 ),
               ),
@@ -539,23 +751,6 @@ class _ExperienceCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _DrawerSectionLabel extends StatelessWidget {
-  const _DrawerSectionLabel(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 14, 6, 6),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 14, color: HubColors.textMuted),
       ),
     );
   }
@@ -641,13 +836,24 @@ void _showQuickCreate(BuildContext context, AppController controller) {
                   _QuickCreateRow(
                     icon: CupertinoIcons.globe,
                     label: 'Webpage knowledge',
-                    onTap: () => run(() => _addWebpage(context, controller)),
+                    onTap: () => run(
+                      () => addKnowledgeSource(
+                        context,
+                        controller,
+                        kind: KnowledgeKind.webpage,
+                      ),
+                    ),
                   ),
                   _QuickCreateRow(
                     icon: CupertinoIcons.question_circle,
                     label: 'Short answer',
-                    onTap: () =>
-                        run(() => _addShortAnswer(context, controller)),
+                    onTap: () => run(
+                      () => addKnowledgeSource(
+                        context,
+                        controller,
+                        kind: KnowledgeKind.shortAnswer,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -689,35 +895,193 @@ class _QuickCreateRow extends StatelessWidget {
   }
 }
 
-Future<void> _addWebpage(BuildContext context, AppController controller) async {
-  final value = await showTextPrompt(
+Future<void> addKnowledgeSource(
+  BuildContext context,
+  AppController controller, {
+  KnowledgeKind? kind,
+}) async {
+  final draft = await showHubEditor<_KnowledgeDraft>(
     context,
-    title: 'Add webpage',
-    label: 'Page URL',
-    hint: 'https://example.com/pricing',
-    keyboardType: TextInputType.url,
+    _AddKnowledgePage(initialKind: kind),
   );
-  if (value == null || !context.mounted) return;
+  if (draft == null || !context.mounted) return;
   try {
-    await controller.addWebpage(value);
+    if (draft.kind == KnowledgeKind.webpage) {
+      await controller.addWebpage(draft.content);
+    } else {
+      await controller.addShortAnswer(draft.content, draft.answer ?? '');
+    }
   } on WorkspaceException catch (error) {
     if (context.mounted) showHubMessage(context, error.message);
   }
 }
 
-Future<void> _addShortAnswer(
-  BuildContext context,
-  AppController controller,
-) async {
-  final result = await showDialog<List<String>>(
-    context: context,
-    builder: (context) => const _ShortAnswerDialog(),
-  );
-  if (result == null || !context.mounted) return;
-  try {
-    await controller.addShortAnswer(result[0], result[1]);
-  } on WorkspaceException catch (error) {
-    if (context.mounted) showHubMessage(context, error.message);
+class _KnowledgeDraft {
+  const _KnowledgeDraft({
+    required this.kind,
+    required this.content,
+    this.answer,
+  });
+
+  final KnowledgeKind kind;
+  final String content;
+  final String? answer;
+}
+
+class _AddKnowledgePage extends StatefulWidget {
+  const _AddKnowledgePage({this.initialKind});
+
+  final KnowledgeKind? initialKind;
+
+  @override
+  State<_AddKnowledgePage> createState() => _AddKnowledgePageState();
+}
+
+class _AddKnowledgePageState extends State<_AddKnowledgePage> {
+  late KnowledgeKind _kind;
+  final _url = TextEditingController();
+  final _question = TextEditingController();
+  final _answer = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _kind = widget.initialKind ?? KnowledgeKind.webpage;
+  }
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _question.dispose();
+    _answer.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (_kind == KnowledgeKind.webpage) {
+      Navigator.pop(context, _KnowledgeDraft(kind: _kind, content: _url.text));
+      return;
+    }
+    Navigator.pop(
+      context,
+      _KnowledgeDraft(
+        kind: _kind,
+        content: _question.text,
+        answer: _answer.text,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return HubEditorPage(
+      title: 'Add knowledge',
+      doneLabel: 'Add',
+      onDone: _save,
+      body: ListView(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          20,
+          16,
+          MediaQuery.viewInsetsOf(context).bottom + 28,
+        ),
+        children: [
+          Text(
+            'Choose a source',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 10),
+          HubGroup(
+            children: [
+              _KnowledgeKindRow(
+                icon: CupertinoIcons.globe,
+                title: 'Webpage URL',
+                subtitle: 'The agent can answer from this page.',
+                selected: _kind == KnowledgeKind.webpage,
+                onTap: () => setState(() => _kind = KnowledgeKind.webpage),
+              ),
+              _KnowledgeKindRow(
+                icon: CupertinoIcons.question_circle,
+                title: 'Short answer',
+                subtitle: 'A question and the exact reply to use.',
+                selected: _kind == KnowledgeKind.shortAnswer,
+                onTap: () => setState(() => _kind = KnowledgeKind.shortAnswer),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          if (_kind == KnowledgeKind.webpage)
+            TextField(
+              controller: _url,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: 'Page URL',
+                hintText: 'https://example.com/pricing',
+              ),
+            )
+          else ...[
+            TextField(
+              controller: _question,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Question'),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _answer,
+              minLines: 4,
+              maxLines: 8,
+              decoration: const InputDecoration(labelText: 'Answer'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _KnowledgeKindRow extends StatelessWidget {
+  const _KnowledgeKindRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            IconBadge(icon: icon),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 17)),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 13, color: HubColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            SquareCheck(checked: selected),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -923,28 +1287,10 @@ class _TrainScreenState extends State<TrainScreen> {
           icon: CupertinoIcons.book,
           title: 'Knowledge',
           detail: 'sources',
-          trailing: PopupMenuButton<String>(
+          trailing: IconButton(
             tooltip: 'Add knowledge',
-            onSelected: (value) => value == 'url'
-                ? _addWebpage(context, controller)
-                : _addShortAnswer(context, controller),
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'url',
-                child: ListTile(
-                  leading: Icon(CupertinoIcons.globe),
-                  title: Text('Webpage URL'),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'qa',
-                child: ListTile(
-                  leading: Icon(CupertinoIcons.question_circle),
-                  title: Text('Short answer'),
-                ),
-              ),
-            ],
-            child: const Icon(CupertinoIcons.add_circled, size: 26),
+            onPressed: () => addKnowledgeSource(context, controller),
+            icon: const Icon(CupertinoIcons.add_circled, size: 26),
           ),
           child: agent.knowledgeSources.isEmpty
               ? HubEmptyState(
@@ -952,7 +1298,11 @@ class _TrainScreenState extends State<TrainScreen> {
                   title: 'No knowledge yet',
                   message: 'Add a webpage or a short answer.',
                   actionLabel: 'Add webpage',
-                  onAction: () => _addWebpage(context, controller),
+                  onAction: () => addKnowledgeSource(
+                    context,
+                    controller,
+                    kind: KnowledgeKind.webpage,
+                  ),
                 )
               : Column(
                   children: [
@@ -1621,59 +1971,5 @@ class _StatusPill extends StatelessWidget {
         tone: PillTone.danger,
       ),
     };
-  }
-}
-
-class _ShortAnswerDialog extends StatefulWidget {
-  const _ShortAnswerDialog();
-
-  @override
-  State<_ShortAnswerDialog> createState() => _ShortAnswerDialogState();
-}
-
-class _ShortAnswerDialogState extends State<_ShortAnswerDialog> {
-  final question = TextEditingController();
-  final answer = TextEditingController();
-
-  @override
-  void dispose() {
-    question.dispose();
-    answer.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add short answer'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: question,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Question'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: answer,
-            minLines: 3,
-            maxLines: 6,
-            decoration: const InputDecoration(labelText: 'Answer'),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(minimumSize: const Size(0, 42)),
-          onPressed: () => Navigator.pop(context, [question.text, answer.text]),
-          child: const Text('Add'),
-        ),
-      ],
-    );
   }
 }
