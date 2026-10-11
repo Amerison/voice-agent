@@ -70,7 +70,11 @@ void main() {
     expect(find.text('Train'), findsOneWidget);
     expect(find.text('CRM'), findsOneWidget);
     expect(find.text('Identity'), findsNothing);
-    expect(find.textContaining('Here’s what’s happening'), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text('Home')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Here’s what’s happening'), findsNothing);
 
     await tester.tap(
       find.descendant(
@@ -85,7 +89,7 @@ void main() {
     );
     expect(
       find.text('Give Maya reliable answers and clear boundaries.'),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('Train'), findsNWidgets(2));
 

@@ -917,7 +917,7 @@ class _TrainScreenState extends State<TrainScreen> {
     final controller = widget.controller;
     final agent = controller.data.agent;
     return HubPage(
-      headline: 'Give ${agent.name} reliable answers and clear boundaries.',
+      key: const PageStorageKey('train'),
       children: [
         HubCard(
           icon: CupertinoIcons.book,
@@ -1128,9 +1128,7 @@ class HomeScreen extends StatelessWidget {
         .where((contact) => contact.leadStatus == 'Qualified')
         .length;
     return HubPage(
-      eyebrow: formatLongDate(now),
-      headline:
-          '${greetingFor(now)}. Here’s what’s happening with ${controller.data.agent.name}.',
+      key: const PageStorageKey('home'),
       children: [
         Row(
           children: [
