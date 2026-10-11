@@ -170,7 +170,7 @@ class _AgentTypeCard extends StatelessWidget {
                   const SizedBox(height: 5),
                   Text(
                     description,
-                    style: const TextStyle(color: HubColors.textMuted),
+                    style: TextStyle(color: HubColors.textMuted),
                   ),
                 ],
               ),
@@ -195,7 +195,7 @@ const _bottomDestinations = [
   _Destination('CRM', CupertinoIcons.person_crop_rectangle),
 ];
 
-enum _WorkspaceRoute { home, train, crm, identity, deploy, calls }
+enum _WorkspaceRoute { home, train, crm, identity, deploy, calls, settings }
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({super.key, required this.controller});
@@ -221,6 +221,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   void _selectRoute(_WorkspaceRoute route) => setState(() => _route = route);
 
+  String get _routeTitle => switch (_route) {
+    _WorkspaceRoute.home => 'Home',
+    _WorkspaceRoute.train => 'Train',
+    _WorkspaceRoute.crm => 'Contacts',
+    _WorkspaceRoute.identity => 'Identity',
+    _WorkspaceRoute.deploy => 'Deploy',
+    _WorkspaceRoute.calls => 'Calls',
+    _WorkspaceRoute.settings => 'Settings',
+  };
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -231,6 +241,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       IdentityScreen(controller: controller),
       DeployScreen(controller: controller),
       CallsScreen(controller: controller),
+      SettingsScreen(controller: controller),
     ];
     return Scaffold(
       drawer: _WorkspaceDrawer(
@@ -242,6 +253,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         },
       ),
       appBar: AppBar(
+        title: Text(_routeTitle),
+        centerTitle: true,
         leading: Builder(
           builder: (context) => IconButton(
             tooltip: 'Menu',
@@ -249,27 +262,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             icon: const Icon(CupertinoIcons.line_horizontal_3, size: 26),
           ),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: controller.isBusy ? null : controller.refresh,
-            icon: const Icon(CupertinoIcons.arrow_clockwise),
-          ),
-          IconButton(
-            tooltip: 'Create',
-            onPressed: () => _showQuickCreate(context, controller),
-            icon: const Icon(CupertinoIcons.add, size: 26),
-          ),
-          const SizedBox(width: 4),
-        ],
+        actions: _route == _WorkspaceRoute.crm
+            ? null
+            : [
+                IconButton(
+                  tooltip: 'Create',
+                  onPressed: () => _showQuickCreate(context, controller),
+                  icon: const Icon(CupertinoIcons.add, size: 26),
+                ),
+                const SizedBox(width: 4),
+              ],
       ),
       body: Column(
         children: [
-          if (controller.isDemo)
-            const HubBanner(
-              text: 'Demo mode · Add API_BASE_URL to connect Vapi',
-              icon: CupertinoIcons.lab_flask,
-            ),
           if (controller.error != null)
             HubBanner(
               text: controller.error!,
@@ -283,14 +288,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ),
         ],
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: BreezeButton(
         label: 'Test ${controller.data.agent.name}',
         icon: CupertinoIcons.waveform,
         onPressed: () => showVoiceTestSheet(context, controller),
       ),
       bottomNavigationBar: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(top: BorderSide(color: HubColors.border)),
         ),
         child: NavigationBar(
@@ -371,6 +376,15 @@ class _WorkspaceDrawer extends StatelessWidget {
               selected: selectedRoute == _WorkspaceRoute.crm,
               onTap: () => onSelect(_WorkspaceRoute.crm),
             ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+              child: Divider(),
+            ),
+            _DrawerItem(
+              destination: const _Destination('Settings', CupertinoIcons.gear),
+              selected: selectedRoute == _WorkspaceRoute.settings,
+              onTap: () => onSelect(_WorkspaceRoute.settings),
+            ),
           ],
         ),
       ),
@@ -405,6 +419,51 @@ class _WorkspaceDrawer extends StatelessWidget {
   }
 }
 
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key, required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return HubPage(
+      headline: 'Make the workspace feel right for you.',
+      children: [
+        HubCard(
+          icon: controller.isDarkMode
+              ? CupertinoIcons.moon_fill
+              : CupertinoIcons.sun_max_fill,
+          title: 'Appearance',
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Dark mode',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Use the darker color palette throughout the app.',
+                      style: TextStyle(color: HubColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: controller.isDarkMode,
+                onChanged: controller.setDarkMode,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DrawerAccount extends StatelessWidget {
   const _DrawerAccount({required this.agent});
 
@@ -431,7 +490,7 @@ class _DrawerAccount extends StatelessWidget {
               ),
               Text(
                 agent.phoneNumber ?? 'No phone number yet',
-                style: const TextStyle(color: HubColors.textMuted),
+                style: TextStyle(color: HubColors.textMuted),
               ),
             ],
           ),
@@ -452,12 +511,12 @@ class _ExperienceCard extends StatelessWidget {
       color: HubColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: HubColors.border),
+        side: BorderSide(color: HubColors.border),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
-        child: const Padding(
+        child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
@@ -496,7 +555,7 @@ class _DrawerSectionLabel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(6, 14, 6, 6),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 14, color: HubColors.textMuted),
+        style: TextStyle(fontSize: 14, color: HubColors.textMuted),
       ),
     );
   }
@@ -539,10 +598,7 @@ class _DrawerItem extends StatelessWidget {
                 ),
               ),
               if (trailing != null)
-                Text(
-                  trailing!,
-                  style: const TextStyle(color: HubColors.textMuted),
-                ),
+                Text(trailing!, style: TextStyle(color: HubColors.textMuted)),
             ],
           ),
         ),
@@ -725,7 +781,6 @@ class _IdentityScreenState extends State<IdentityScreen> {
   @override
   Widget build(BuildContext context) {
     return HubPage(
-      eyebrow: 'Identity',
       headline: 'Shape who answers the phone and how they sound.',
       children: [
         HubCard(
@@ -740,7 +795,7 @@ class _IdentityScreenState extends State<IdentityScreen> {
                 decoration: const InputDecoration(labelText: 'Agent name'),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Friendliness',
                 style: TextStyle(color: HubColors.textMuted),
               ),
@@ -862,7 +917,6 @@ class _TrainScreenState extends State<TrainScreen> {
     final controller = widget.controller;
     final agent = controller.data.agent;
     return HubPage(
-      eyebrow: 'Train',
       headline: 'Give ${agent.name} reliable answers and clear boundaries.',
       children: [
         HubCard(
@@ -1001,7 +1055,7 @@ class _KnowledgeRow extends StatelessWidget {
                   isWebpage ? source.content : source.answer ?? '',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: HubColors.textMuted),
+                  style: TextStyle(color: HubColors.textMuted),
                 ),
               ],
             ),
@@ -1044,10 +1098,7 @@ class _ActionTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: Theme.of(context).textTheme.titleMedium),
-              Text(
-                subtitle,
-                style: const TextStyle(color: HubColors.textMuted),
-              ),
+              Text(subtitle, style: TextStyle(color: HubColors.textMuted)),
             ],
           ),
         ),
@@ -1181,7 +1232,6 @@ class CallsScreen extends StatelessWidget {
     final calls = [...controller.data.calls]
       ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
     return HubPage(
-      eyebrow: 'Calls',
       headline: 'Review every conversation and its outcome.',
       children: [
         HubCard(
@@ -1262,7 +1312,7 @@ class _MeetingRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   formatTimestamp(meeting.startsAt),
-                  style: const TextStyle(color: HubColors.textMuted),
+                  style: TextStyle(color: HubColors.textMuted),
                 ),
               ],
             ),
@@ -1305,7 +1355,7 @@ class _CallRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     '${relativeDate(call.startedAt)} · ${formatDuration(call.durationSeconds)}',
-                    style: const TextStyle(color: HubColors.textMuted),
+                    style: TextStyle(color: HubColors.textMuted),
                   ),
                 ],
               ),
@@ -1346,7 +1396,7 @@ class _MetricCard extends StatelessWidget {
             const SizedBox(height: 14),
             Text(value, style: Theme.of(context).textTheme.headlineMedium),
             const SizedBox(height: 2),
-            Text(label, style: const TextStyle(color: HubColors.textMuted)),
+            Text(label, style: TextStyle(color: HubColors.textMuted)),
           ],
         ),
       ),
@@ -1364,7 +1414,6 @@ class DeployScreen extends StatelessWidget {
     final agent = controller.data.agent;
     final ready = agent.syncStatus == SyncStatus.ready;
     return HubPage(
-      eyebrow: 'Deploy',
       headline: 'Turn your configuration into a live phone agent.',
       children: [
         HubCard(
@@ -1409,7 +1458,7 @@ class DeployScreen extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   'Last synced ${relativeDate(agent.lastSyncedAt!)}',
-                  style: const TextStyle(color: HubColors.textMuted),
+                  style: TextStyle(color: HubColors.textMuted),
                 ),
               ],
               const SizedBox(height: 16),
@@ -1441,7 +1490,7 @@ class DeployScreen extends StatelessWidget {
           )
         else
           _LiveNumberCard(agent: agent),
-        const Text(
+        Text(
           'Inbound only · English · No human handoff',
           textAlign: TextAlign.center,
           style: TextStyle(

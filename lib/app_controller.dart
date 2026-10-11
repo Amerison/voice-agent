@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 import 'repository.dart';
@@ -6,19 +7,33 @@ import 'repository.dart';
 class AppController extends ChangeNotifier {
   AppController(this.repository);
 
+  static const _darkModeKey = 'voice_agent_dark_mode';
+
   final WorkspaceRepository repository;
   WorkspaceData? _data;
   bool _busy = false;
+  bool _darkMode = true;
   String? _error;
 
   WorkspaceData get data => _data!;
   bool get isReady => _data != null;
   bool get isBusy => _busy;
   bool get isDemo => repository.isDemo;
+  bool get isDarkMode => _darkMode;
   String? get error => _error;
 
   Future<void> initialize() async {
+    final preferences = await SharedPreferences.getInstance();
+    _darkMode = preferences.getBool(_darkModeKey) ?? true;
     await _run(() async => _data = await repository.load());
+  }
+
+  Future<void> setDarkMode(bool value) async {
+    if (_darkMode == value) return;
+    _darkMode = value;
+    notifyListeners();
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_darkModeKey, value);
   }
 
   Future<void> completeOnboarding() async {

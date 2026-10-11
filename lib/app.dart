@@ -11,26 +11,32 @@ class VoiceAgentApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Voice Agent',
-      debugShowCheckedModeBanner: false,
-      theme: buildHubTheme(),
-      themeMode: ThemeMode.dark,
-      home: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          if (!controller.isReady) {
-            return LaunchScreen(
-              error: controller.error,
-              onRetry: controller.initialize,
-            );
-          }
-          if (!controller.data.onboardingComplete) {
-            return OnboardingScreen(controller: controller);
-          }
-          return WorkspaceScreen(controller: controller);
-        },
-      ),
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        HubColors.useDarkMode(controller.isDarkMode);
+        return MaterialApp(
+          title: 'Voice Agent',
+          debugShowCheckedModeBanner: false,
+          theme: buildHubTheme(Brightness.light),
+          darkTheme: buildHubTheme(Brightness.dark),
+          themeMode: controller.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          home: Builder(
+            builder: (context) {
+              if (!controller.isReady) {
+                return LaunchScreen(
+                  error: controller.error,
+                  onRetry: controller.initialize,
+                );
+              }
+              if (!controller.data.onboardingComplete) {
+                return OnboardingScreen(controller: controller);
+              }
+              return WorkspaceScreen(controller: controller);
+            },
+          ),
+        );
+      },
     );
   }
 }

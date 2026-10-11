@@ -89,7 +89,7 @@ class _CallSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const IconBadge(
+        IconBadge(
           icon: CupertinoIcons.phone,
           size: 52,
           color: HubColors.surface,
@@ -110,7 +110,7 @@ class _CallSummary extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     formatDuration(call.durationSeconds),
-                    style: const TextStyle(color: HubColors.textMuted),
+                    style: TextStyle(color: HubColors.textMuted),
                   ),
                 ],
               ),
@@ -152,7 +152,7 @@ class _TranscriptBubble extends StatelessWidget {
           children: [
             Text(
               isAgent ? 'Agent' : 'Caller',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: HubFonts.mono,
                 fontSize: 11,
                 color: HubColors.textMuted,

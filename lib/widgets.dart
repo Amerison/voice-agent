@@ -7,13 +7,13 @@ import 'theme.dart';
 class HubPage extends StatelessWidget {
   const HubPage({
     super.key,
-    required this.eyebrow,
     required this.headline,
     required this.children,
+    this.eyebrow,
     this.headerAction,
   });
 
-  final String eyebrow;
+  final String? eyebrow;
   final String headline;
   final List<Widget> children;
   final Widget? headerAction;
@@ -22,7 +22,7 @@ class HubPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return ListView(
-      key: PageStorageKey(eyebrow),
+      key: PageStorageKey(eyebrow ?? headline),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
       children: [
         Padding(
@@ -34,8 +34,10 @@ class HubPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(eyebrow, style: textTheme.labelSmall),
-                    const SizedBox(height: 10),
+                    if (eyebrow != null) ...[
+                      Text(eyebrow!, style: textTheme.labelSmall),
+                      const SizedBox(height: 10),
+                    ],
                     Text(headline, style: textTheme.headlineMedium),
                   ],
                 ),
@@ -109,7 +111,7 @@ class _CardTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text.rich(
       TextSpan(
-        style: const TextStyle(fontSize: 16, color: HubColors.text),
+        style: TextStyle(fontSize: 16, color: HubColors.text),
         children: [
           TextSpan(
             text: title,
@@ -118,7 +120,7 @@ class _CardTitle extends StatelessWidget {
           if (detail != null)
             TextSpan(
               text: ' $detail',
-              style: const TextStyle(color: HubColors.textMuted),
+              style: TextStyle(color: HubColors.textMuted),
             ),
         ],
       ),
@@ -133,14 +135,14 @@ class IconBadge extends StatelessWidget {
     super.key,
     required this.icon,
     this.size = 30,
-    this.color = HubColors.background,
-    this.iconColor = HubColors.text,
+    this.color,
+    this.iconColor,
   });
 
   final IconData icon;
   final double size;
-  final Color color;
-  final Color iconColor;
+  final Color? color;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -148,10 +150,10 @@ class IconBadge extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color,
+        color: color ?? HubColors.background,
         borderRadius: BorderRadius.circular(size * .3),
       ),
-      child: Icon(icon, size: size * .55, color: iconColor),
+      child: Icon(icon, size: size * .55, color: iconColor ?? HubColors.text),
     );
   }
 }
@@ -293,9 +295,7 @@ class CircleAction extends StatelessWidget {
         children: [
           Material(
             color: HubColors.surface,
-            shape: const CircleBorder(
-              side: BorderSide(color: HubColors.textMuted),
-            ),
+            shape: CircleBorder(side: BorderSide(color: HubColors.textMuted)),
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: onTap,
@@ -405,7 +405,7 @@ class HubEmptyState extends StatelessWidget {
               Text(
                 message!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: HubColors.textMuted),
+                style: TextStyle(color: HubColors.textMuted),
               ),
             ],
             if (actionLabel != null) ...[
@@ -470,7 +470,7 @@ class HubSheetHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: HubColors.surface,
         border: Border(bottom: BorderSide(color: HubColors.border)),
       ),
@@ -615,7 +615,7 @@ class _PickerRow<T> extends StatelessWidget {
                     if (option.subtitle != null)
                       Text(
                         option.subtitle!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: HubColors.textMuted,
@@ -723,29 +723,30 @@ class HubBanner extends StatelessWidget {
     super.key,
     required this.text,
     required this.icon,
-    this.color = HubColors.textMuted,
+    this.color,
     this.onClose,
   });
 
   final String text;
   final IconData icon;
-  final Color color;
+  final Color? color;
   final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
+    final bannerColor = color ?? HubColors.textMuted;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       padding: EdgeInsets.fromLTRB(14, 8, onClose == null ? 14 : 2, 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: .1),
+        color: bannerColor.withValues(alpha: .1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: .35)),
+        border: Border.all(color: bannerColor.withValues(alpha: .35)),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: color),
+          Icon(icon, size: 16, color: bannerColor),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -753,7 +754,7 @@ class HubBanner extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: color,
+                color: bannerColor,
               ),
             ),
           ),
@@ -761,7 +762,7 @@ class HubBanner extends StatelessWidget {
             IconButton(
               visualDensity: VisualDensity.compact,
               onPressed: onClose,
-              icon: Icon(CupertinoIcons.xmark, size: 16, color: color),
+              icon: Icon(CupertinoIcons.xmark, size: 16, color: bannerColor),
             ),
         ],
       ),
@@ -776,18 +777,60 @@ Future<String?> showTextPrompt(
   String? hint,
   TextInputType? keyboardType,
   int? maxLength,
-}) async {
-  final controller = TextEditingController();
-  final result = await showDialog<String>(
+}) {
+  return showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title),
+    builder: (_) => _TextPromptDialog(
+      title: title,
+      label: label,
+      hint: hint,
+      keyboardType: keyboardType,
+      maxLength: maxLength,
+    ),
+  );
+}
+
+class _TextPromptDialog extends StatefulWidget {
+  const _TextPromptDialog({
+    required this.title,
+    required this.label,
+    this.hint,
+    this.keyboardType,
+    this.maxLength,
+  });
+
+  final String title;
+  final String label;
+  final String? hint;
+  final TextInputType? keyboardType;
+  final int? maxLength;
+
+  @override
+  State<_TextPromptDialog> createState() => _TextPromptDialogState();
+}
+
+class _TextPromptDialogState extends State<_TextPromptDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
       content: TextField(
-        controller: controller,
+        controller: _controller,
         autofocus: true,
-        keyboardType: keyboardType,
-        maxLength: maxLength,
-        decoration: InputDecoration(labelText: label, hintText: hint),
+        keyboardType: widget.keyboardType,
+        maxLength: widget.maxLength,
+        decoration: InputDecoration(
+          labelText: widget.label,
+          hintText: widget.hint,
+        ),
       ),
       actions: [
         TextButton(
@@ -796,14 +839,12 @@ Future<String?> showTextPrompt(
         ),
         FilledButton(
           style: FilledButton.styleFrom(minimumSize: const Size(0, 42)),
-          onPressed: () => Navigator.pop(context, controller.text),
+          onPressed: () => Navigator.pop(context, _controller.text),
           child: const Text('Continue'),
         ),
       ],
-    ),
-  );
-  controller.dispose();
-  return result;
+    );
+  }
 }
 
 void showHubMessage(BuildContext context, String message) {

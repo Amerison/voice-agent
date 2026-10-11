@@ -496,11 +496,12 @@ packages:
   vapi:
     dependency: "direct main"
     description:
-      name: vapi
-      sha256: dd12b49b07907cb280e9b40e1388965866aea81fe4622361ff48b47c5285f7f4
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.0"
+      path: "."
+      ref: "16b6769bb9f4040773d29c8e7546834b32c3e058"
+      resolved-ref: "16b6769bb9f4040773d29c8e7546834b32c3e058"
+      url: "https://github.com/VapiAI/client-sdk-flutter.git"
+    source: git
+    version: "0.1.1"
   vector_math:
     dependency: transitive
     description:
