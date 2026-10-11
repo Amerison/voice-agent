@@ -37,7 +37,10 @@ dependencies:
   http: ^1.6.0
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
-  vapi: ^0.1.0
+  vapi:
+    git:
+      url: https://github.com/VapiAI/client-sdk-flutter.git
+      ref: 16b6769bb9f4040773d29c8e7546834b32c3e058
 
 dev_dependencies:
   flutter_test:

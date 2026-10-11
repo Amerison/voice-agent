@@ -44,23 +44,26 @@ class _CrmScreenState extends State<CrmScreen> {
           .toLowerCase();
       return haystack.contains(_query.toLowerCase());
     }).toList();
-    return HubPage(
-      eyebrow: 'Contacts',
-      headline:
-          '${data.contacts.length} contacts and ${data.meetings.length} upcoming meetings.',
-      headerAction: IconButton(
-        tooltip: 'Add contact',
-        onPressed: () => editContact(context, widget.controller),
-        icon: const Icon(CupertinoIcons.person_badge_plus),
-      ),
+    return ListView(
+      key: const PageStorageKey('Contacts'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
       children: [
         TextField(
           onChanged: (value) => setState(() => _query = value),
           decoration: const InputDecoration(
             prefixIcon: Icon(CupertinoIcons.search, size: 20),
-            hintText: 'Search contacts',
+            hintText: 'Search Contacts',
           ),
         ),
+        const SizedBox(height: 22),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            '${data.contacts.length} contacts and ${data.meetings.length} upcoming meetings.',
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
+        ),
+        const SizedBox(height: 22),
         if (contacts.isEmpty)
           const HubEmptyState(
             icon: CupertinoIcons.search,
@@ -117,7 +120,7 @@ class _ContactRow extends StatelessWidget {
                     '${contact.jobTitle} · ${contact.company}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: HubColors.textMuted),
+                    style: TextStyle(color: HubColors.textMuted),
                   ),
                 ],
               ),
@@ -253,13 +256,13 @@ class _ContactTitle extends StatelessWidget {
               ),
               Text.rich(
                 TextSpan(
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: HubFonts.sans,
                     fontSize: 14,
                     color: HubColors.textMuted,
                   ),
                   children: [
-                    const TextSpan(
+                    TextSpan(
                       text: 'Contact',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
@@ -472,7 +475,7 @@ class _AboutTab extends StatelessWidget {
                   children: [
                     Text(
                       label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         color: HubColors.textMuted,
                       ),

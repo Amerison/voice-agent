@@ -7,7 +7,6 @@ import 'package:vapi/vapi.dart';
 import 'app_controller.dart';
 import 'models.dart';
 import 'theme.dart';
-import 'widgets.dart';
 
 const _vapiPublicKey = String.fromEnvironment('VAPI_PUBLIC_KEY');
 
@@ -15,11 +14,11 @@ Future<void> showVoiceTestSheet(
   BuildContext context,
   AppController controller,
 ) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (_) => _VoiceTestSheet(controller: controller),
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => _VoiceTestSheet(controller: controller),
+    ),
   );
 }
 
@@ -59,6 +58,9 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
   bool _muted = false;
   bool _stopping = false;
   final List<_TranscriptLine> _transcript = [];
+
+  bool get _isActive =>
+      _state == _VoiceTestState.listening || _state == _VoiceTestState.speaking;
 
   @override
   void initState() {
@@ -280,10 +282,9 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
   }
 
   String get _statusTitle => switch (_state) {
-    _VoiceTestState.preparing => 'Preparing your agent',
-    _VoiceTestState.connecting => 'Connecting…',
-    _VoiceTestState.listening =>
-      '${widget.controller.data.agent.name} is listening',
+    _VoiceTestState.preparing => 'Connecting',
+    _VoiceTestState.connecting => 'Connecting',
+    _VoiceTestState.listening => 'Ready to chat',
     _VoiceTestState.speaking =>
       '${widget.controller.data.agent.name} is speaking',
     _VoiceTestState.ended => 'Test complete',
@@ -291,9 +292,9 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
   };
 
   String get _statusDetail => switch (_state) {
-    _VoiceTestState.preparing => 'Loading the latest identity and training.',
-    _VoiceTestState.connecting => 'This usually takes a few seconds.',
-    _VoiceTestState.listening => 'Speak naturally. Your microphone is live.',
+    _VoiceTestState.preparing => 'Loading the latest voice and training.',
+    _VoiceTestState.connecting => 'Starting a secure voice session.',
+    _VoiceTestState.listening => 'Your microphone is live.',
     _VoiceTestState.speaking => 'You can interrupt at any time.',
     _VoiceTestState.ended => 'Your live Vapi session has ended.',
     _VoiceTestState.error => _error ?? 'Please try again.',
@@ -301,204 +302,134 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
 
   @override
   Widget build(BuildContext context) {
-    final active =
-        _state == _VoiceTestState.listening ||
-        _state == _VoiceTestState.speaking;
-    return FractionallySizedBox(
-      heightFactor: .96,
-      child: Column(
-        children: [
-          HubSheetHeader(
-            title: 'Test ${widget.controller.data.agent.name}',
-            showCancel: false,
-            doneLabel: 'Close',
-            onDone: _close,
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+    final active = _isActive;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_close());
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            const Positioned.fill(child: _CallBackdrop()),
+            SafeArea(
               child: Column(
                 children: [
-                  const HubPill(
-                    label: 'LIVE VOICE TEST',
-                    tone: PillTone.accent,
+                  Expanded(
+                    child: _transcript.isEmpty
+                        ? _EmptyCallState(
+                            animation: _pulse,
+                            title: _statusTitle,
+                            detail: _statusDetail,
+                            state: _state,
+                            onRetry: _state == _VoiceTestState.error
+                                ? _retry
+                                : null,
+                          )
+                        : _TranscriptView(
+                            lines: _transcript,
+                            agentName: widget.controller.data.agent.name,
+                            state: _state,
+                          ),
                   ),
-                  const Spacer(),
-                  _VoicePulse(
-                    animation: _pulse,
-                    active: active,
-                    speaking: _state == _VoiceTestState.speaking,
-                  ),
-                  const SizedBox(height: 28),
-                  Text(
-                    _statusTitle,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _statusDetail,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: HubColors.textMuted),
-                  ),
-                  const Spacer(),
-                  if (_transcript.isNotEmpty)
-                    _TranscriptPreview(lines: _transcript.takeLast(3).toList()),
-                  if (_state == _VoiceTestState.error) ...[
-                    const SizedBox(height: 22),
-                    OutlinedButton.icon(
-                      onPressed: _retry,
-                      icon: const Icon(CupertinoIcons.arrow_clockwise),
-                      label: const Text('Try again'),
-                    ),
-                  ] else if (_state == _VoiceTestState.ended) ...[
-                    const SizedBox(height: 22),
-                    FilledButton.icon(
-                      onPressed: _retry,
-                      icon: const Icon(CupertinoIcons.phone),
-                      label: const Text('Test again'),
-                    ),
-                  ] else ...[
-                    const SizedBox(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 22),
+                    child: Row(
                       children: [
-                        _RoundControl(
+                        const Spacer(),
+                        _CircleButton(
+                          tooltip: _muted ? 'Unmute' : 'Mute',
                           icon: _muted
-                              ? CupertinoIcons.mic_slash
-                              : CupertinoIcons.mic,
-                          label: _muted ? 'Unmute' : 'Mute',
+                              ? CupertinoIcons.mic_slash_fill
+                              : CupertinoIcons.mic_fill,
                           onTap: active ? _toggleMute : null,
                         ),
-                        const SizedBox(width: 28),
-                        _RoundControl(
-                          icon: CupertinoIcons.phone_down_fill,
-                          label: 'End test',
-                          color: HubColors.danger,
-                          onTap: _call == null ? null : _stop,
+                        const SizedBox(width: 12),
+                        _EndCallButton(
+                          animation: _pulse,
+                          active: active,
+                          onTap: _close,
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-extension<T> on Iterable<T> {
-  Iterable<T> takeLast(int count) {
-    final values = toList();
-    return values.skip(values.length > count ? values.length - count : 0);
+class _CallBackdrop extends StatelessWidget {
+  const _CallBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: HubColors.background,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: const [.52, .78, 1],
+          colors: [
+            HubColors.background,
+            HubColors.orange.withValues(alpha: dark ? .045 : .07),
+            HubColors.magenta.withValues(alpha: dark ? .14 : .17),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-class _VoicePulse extends StatelessWidget {
-  const _VoicePulse({
+class _EmptyCallState extends StatelessWidget {
+  const _EmptyCallState({
     required this.animation,
-    required this.active,
-    required this.speaking,
+    required this.title,
+    required this.detail,
+    required this.state,
+    this.onRetry,
   });
 
   final Animation<double> animation;
-  final bool active;
-  final bool speaking;
+  final String title;
+  final String detail;
+  final _VoiceTestState state;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        final progress = active ? animation.value : 0.0;
-        return SizedBox(
-          width: 210,
-          height: 210,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              for (final (baseSize, opacity) in const [
-                (202.0, .10),
-                (166.0, .16),
-                (132.0, .22),
-              ])
-                Container(
-                  width: baseSize + progress * (speaking ? 10 : 5),
-                  height: baseSize + progress * (speaking ? 10 : 5),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      width: 1.5,
-                      color: HubColors.orange.withValues(alpha: opacity),
-                    ),
-                  ),
-                ),
-              Container(
-                width: 104,
-                height: 104,
-                decoration: BoxDecoration(
-                  gradient: HubColors.breeze,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: HubColors.orange.withValues(
-                        alpha: active ? .24 + progress * .14 : .12,
-                      ),
-                      blurRadius: active ? 30 + progress * 16 : 20,
-                      spreadRadius: active ? 4 : 0,
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  speaking ? CupertinoIcons.waveform : CupertinoIcons.mic_fill,
-                  size: 42,
-                  color: Colors.white,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _TranscriptPreview extends StatelessWidget {
-  const _TranscriptPreview({required this.lines});
-
-  final List<_TranscriptLine> lines;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(maxHeight: 156),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: HubColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: HubColors.border),
-      ),
-      child: SingleChildScrollView(
-        reverse: true,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            for (final line in lines) ...[
-              Text(
-                line.role,
-                style: const TextStyle(
-                  fontFamily: HubFonts.mono,
-                  fontSize: 11,
-                  color: HubColors.textMuted,
-                ),
+            _AgentMark(animation: animation, state: state),
+            const SizedBox(height: 22),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: HubColors.textMuted),
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(CupertinoIcons.arrow_clockwise),
+                label: const Text('Try again'),
               ),
-              const SizedBox(height: 3),
-              Text(line.text, maxLines: 2, overflow: TextOverflow.ellipsis),
-              if (line != lines.last) const SizedBox(height: 10),
             ],
           ],
         ),
@@ -507,41 +438,242 @@ class _TranscriptPreview extends StatelessWidget {
   }
 }
 
-class _RoundControl extends StatelessWidget {
-  const _RoundControl({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.color = HubColors.surfaceRaised,
-  });
+class _AgentMark extends StatelessWidget {
+  const _AgentMark({required this.animation, required this.state});
 
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final Color color;
+  final Animation<double> animation;
+  final _VoiceTestState state;
 
   @override
   Widget build(BuildContext context) {
-    return Opacity(
-      opacity: onTap == null ? .42 : 1,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Material(
-            color: color,
-            shape: const CircleBorder(),
-            child: InkWell(
-              onTap: onTap,
-              customBorder: const CircleBorder(),
-              child: SizedBox(
-                width: 62,
-                height: 62,
-                child: Icon(icon, color: Colors.white, size: 26),
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final active =
+            state == _VoiceTestState.listening ||
+            state == _VoiceTestState.speaking ||
+            state == _VoiceTestState.connecting;
+        final scale = active ? 1 + animation.value * .08 : 1.0;
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              gradient: HubColors.breeze,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: HubColors.orange.withValues(alpha: .24),
+                  blurRadius: 26,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: const Icon(CupertinoIcons.sparkles, color: Colors.white),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TranscriptView extends StatelessWidget {
+  const _TranscriptView({
+    required this.lines,
+    required this.agentName,
+    required this.state,
+  });
+
+  final List<_TranscriptLine> lines;
+  final String agentName;
+  final _VoiceTestState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(24, 42, 24, 24),
+      children: [
+        if (state == _VoiceTestState.speaking ||
+            state == _VoiceTestState.listening)
+          Padding(
+            padding: const EdgeInsets.only(top: 18),
+            child: Row(
+              children: [
+                const _SmallAgentMark(),
+                const SizedBox(width: 10),
+                Text(
+                  state == _VoiceTestState.speaking
+                      ? '$agentName is speaking'
+                      : 'Ready to chat',
+                  style: TextStyle(color: HubColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+        for (final line in lines.reversed)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 18),
+            child: line.role == 'You'
+                ? Align(
+                    alignment: Alignment.centerRight,
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 290),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 13,
+                      ),
+                      decoration: BoxDecoration(
+                        color: HubColors.surfaceRaised,
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: Text(line.text),
+                    ),
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _SmallAgentMark(),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 7),
+                          child: Text(
+                            line.text,
+                            style: const TextStyle(fontSize: 17, height: 1.45),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SmallAgentMark extends StatelessWidget {
+  const _SmallAgentMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        gradient: HubColors.breeze,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: const Icon(CupertinoIcons.sparkles, color: Colors.white, size: 17),
+    );
+  }
+}
+
+class _CircleButton extends StatelessWidget {
+  const _CircleButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Opacity(
+        opacity: onTap == null ? .4 : 1,
+        child: Material(
+          color: HubColors.surfaceRaised,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: SizedBox(
+              width: 54,
+              height: 54,
+              child: Icon(icon, color: HubColors.text, size: 23),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EndCallButton extends StatelessWidget {
+  const _EndCallButton({
+    required this.animation,
+    required this.active,
+    required this.onTap,
+  });
+
+  final Animation<double> animation;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Close voice test',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: active ? HubColors.breeze : null,
+          color: active ? null : HubColors.surfaceRaised,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(28),
+            child: SizedBox(
+              width: 114,
+              height: 54,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _Waveform(animation: animation, active: active),
+                  const SizedBox(width: 14),
+                  Icon(CupertinoIcons.xmark, color: HubColors.text, size: 21),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ),
+      ),
+    );
+  }
+}
+
+class _Waveform extends StatelessWidget {
+  const _Waveform({required this.animation, required this.active});
+
+  final Animation<double> animation;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) => Row(
+        children: [
+          for (var index = 0; index < 4; index++)
+            Container(
+              width: 3,
+              height: active
+                  ? 8 + ((animation.value + index * .23) % 1) * 14
+                  : 6,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                color: HubColors.text,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
         ],
       ),
     );
