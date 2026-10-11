@@ -7,6 +7,7 @@ import 'package:vapi/vapi.dart';
 import 'app_controller.dart';
 import 'models.dart';
 import 'theme.dart';
+import 'voice_transcript.dart';
 
 const _vapiPublicKey = String.fromEnvironment('VAPI_PUBLIC_KEY');
 
@@ -31,13 +32,6 @@ enum _VoiceTestState {
   error,
 }
 
-class _TranscriptLine {
-  const _TranscriptLine({required this.role, required this.text});
-
-  final String role;
-  final String text;
-}
-
 class _VoiceTestSheet extends StatefulWidget {
   const _VoiceTestSheet({required this.controller});
 
@@ -57,7 +51,7 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
   String? _error;
   bool _muted = false;
   bool _stopping = false;
-  final List<_TranscriptLine> _transcript = [];
+  final _transcript = VoiceTranscript();
 
   bool get _isActive =>
       _state == _VoiceTestState.listening || _state == _VoiceTestState.speaking;
@@ -65,6 +59,7 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
   @override
   void initState() {
     super.initState();
+    _transcript.addListener(_onTranscriptChanged);
     _pulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -122,6 +117,7 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
       case 'call-start':
         setState(() => _state = _VoiceTestState.listening);
       case 'call-end':
+        _transcript.flush();
         setState(() => _state = _VoiceTestState.ended);
       case 'speech-start':
         setState(() => _state = _VoiceTestState.speaking);
@@ -146,18 +142,23 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
       });
       return;
     }
-    if (message['type'] != 'transcript' ||
-        message['transcriptType'] == 'partial') {
+    if (message['type'] != 'transcript') return;
+    final fromAgent = message['role'] == 'assistant';
+    if (message['transcriptType'] == 'partial') {
+      if (!fromAgent) _transcript.userStillSpeaking();
       return;
     }
     final text = message['transcript'] as String?;
-    if (text == null || text.trim().isEmpty) return;
-    final role = message['role'] == 'assistant'
-        ? widget.controller.data.agent.name
-        : 'You';
-    setState(() {
-      _transcript.add(_TranscriptLine(role: role, text: text.trim()));
-    });
+    if (text == null) return;
+    if (fromAgent) {
+      _transcript.addAgent(text);
+    } else {
+      _transcript.addUser(text);
+    }
+  }
+
+  void _onTranscriptChanged() {
+    if (mounted) setState(() {});
   }
 
   void _fail(String message) {
@@ -244,7 +245,10 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
         // The call may already have been ended remotely.
       }
     }
-    if (mounted) setState(() => _state = _VoiceTestState.ended);
+    if (mounted) {
+      _transcript.flush();
+      setState(() => _state = _VoiceTestState.ended);
+    }
     _stopping = false;
   }
 
@@ -260,9 +264,9 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
     _events = null;
     _call = null;
     _client = null;
+    _transcript.clear();
     setState(() {
       _error = null;
-      _transcript.clear();
       _state = _VoiceTestState.preparing;
     });
     await _start();
@@ -270,6 +274,7 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
 
   @override
   void dispose() {
+    _transcript.dispose();
     _pulse.dispose();
     unawaited(_events?.cancel());
     final call = _call;
@@ -327,7 +332,8 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
                                 : null,
                           )
                         : _TranscriptView(
-                            lines: _transcript,
+                            lines: _transcript.lines,
+                            userThinking: _transcript.isUserThinking,
                             agentName: widget.controller.data.agent.name,
                             state: _state,
                           ),
@@ -481,11 +487,13 @@ class _AgentMark extends StatelessWidget {
 class _TranscriptView extends StatelessWidget {
   const _TranscriptView({
     required this.lines,
+    required this.userThinking,
     required this.agentName,
     required this.state,
   });
 
-  final List<_TranscriptLine> lines;
+  final List<TranscriptLine> lines;
+  final bool userThinking;
   final String agentName;
   final _VoiceTestState state;
 
@@ -512,44 +520,126 @@ class _TranscriptView extends StatelessWidget {
               ],
             ),
           ),
+        if (userThinking)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 18),
+            child: _UserBubble(child: _ThinkingDots()),
+          ),
         for (final line in lines.reversed)
           Padding(
             padding: const EdgeInsets.only(bottom: 18),
-            child: line.role == 'You'
-                ? Align(
-                    alignment: Alignment.centerRight,
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 290),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 13,
-                      ),
-                      decoration: BoxDecoration(
-                        color: HubColors.surfaceRaised,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: Text(line.text),
-                    ),
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const _SmallAgentMark(),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 7),
-                          child: Text(
-                            line.text,
-                            style: const TextStyle(fontSize: 17, height: 1.45),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+            child: switch (line.speaker) {
+              TranscriptSpeaker.user => _UserBubble(child: Text(line.text)),
+              TranscriptSpeaker.agent => _AgentTurn(text: line.text),
+            },
           ),
       ],
     );
+  }
+}
+
+class _UserBubble extends StatelessWidget {
+  const _UserBubble({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 290),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+        decoration: BoxDecoration(
+          color: HubColors.surfaceRaised,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _AgentTurn extends StatelessWidget {
+  const _AgentTurn({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SmallAgentMark(),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 7),
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 17, height: 1.45),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ThinkingDots extends StatefulWidget {
+  const _ThinkingDots();
+
+  @override
+  State<_ThinkingDots> createState() => _ThinkingDotsState();
+}
+
+class _ThinkingDotsState extends State<_ThinkingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Thinking',
+      child: SizedBox(
+        height: 20,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < 3; index++)
+                Container(
+                  width: 7,
+                  height: 7,
+                  margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                  decoration: BoxDecoration(
+                    color: HubColors.textMuted.withValues(
+                      alpha: _dotOpacity(index),
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  double _dotOpacity(int index) {
+    final phase = (_controller.value - index * .18) % 1;
+    final wave = phase < .5 ? phase * 2 : (1 - phase) * 2;
+    return .3 + wave * .7;
   }
 }
 
