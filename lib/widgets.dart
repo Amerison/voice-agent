@@ -7,46 +7,52 @@ import 'theme.dart';
 class HubPage extends StatelessWidget {
   const HubPage({
     super.key,
-    required this.headline,
     required this.children,
+    this.headline,
     this.eyebrow,
     this.headerAction,
   });
 
   final String? eyebrow;
-  final String headline;
+
+  /// When null, the page has no in-page header and relies on the app bar
+  /// title; give the page a [PageStorageKey] so its scroll offset is kept.
+  final String? headline;
   final List<Widget> children;
   final Widget? headerAction;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final headline = this.headline;
     return ListView(
-      key: PageStorageKey(eyebrow ?? headline),
+      key: headline == null ? null : PageStorageKey(eyebrow ?? headline),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 112),
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (eyebrow != null) ...[
-                      Text(eyebrow!, style: textTheme.labelSmall),
-                      const SizedBox(height: 10),
+        if (headline != null) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (eyebrow != null) ...[
+                        Text(eyebrow!, style: textTheme.labelSmall),
+                        const SizedBox(height: 10),
+                      ],
+                      Text(headline, style: textTheme.headlineMedium),
                     ],
-                    Text(headline, style: textTheme.headlineMedium),
-                  ],
+                  ),
                 ),
-              ),
-              if (headerAction != null) headerAction!,
-            ],
+                if (headerAction != null) headerAction!,
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 22),
+          const SizedBox(height: 22),
+        ],
         ...children.expand((child) => [child, const SizedBox(height: 16)]),
       ],
     );
@@ -450,6 +456,52 @@ class _RingIllustration extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Full-screen HubSpot editor: Cancel · serif title · Done, covering the app.
+class HubEditorPage extends StatelessWidget {
+  const HubEditorPage({
+    super.key,
+    required this.title,
+    required this.onDone,
+    required this.body,
+    this.doneLabel = 'Done',
+  });
+
+  final String title;
+  final String doneLabel;
+  final VoidCallback? onDone;
+  final Widget body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: HubColors.background,
+      body: Column(
+        children: [
+          Material(
+            color: HubColors.surface,
+            child: SafeArea(
+              bottom: false,
+              child: HubSheetHeader(
+                title: title,
+                doneLabel: doneLabel,
+                onDone: onDone,
+              ),
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      ),
+    );
+  }
+}
+
+Future<T?> showHubEditor<T>(BuildContext context, Widget page) {
+  return Navigator.of(
+    context,
+    rootNavigator: true,
+  ).push<T>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => page));
 }
 
 /// "Cancel · Serif title · Done" header used by HubSpot's modal sheets.
@@ -888,12 +940,6 @@ String formatTimestamp(DateTime date) {
   final minute = date.minute.toString().padLeft(2, '0');
   final period = date.hour < 12 ? 'AM' : 'PM';
   return '${_months[date.month - 1].substring(0, 3)} ${date.day}, ${date.year} at $hour:$minute $period';
-}
-
-String greetingFor(DateTime date) {
-  if (date.hour < 12) return 'Good morning';
-  if (date.hour < 17) return 'Good afternoon';
-  return 'Good evening';
 }
 
 String relativeDate(DateTime date) {

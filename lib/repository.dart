@@ -36,7 +36,7 @@ Future<WorkspaceRepository> createRepository() async {
 class LocalWorkspaceRepository implements WorkspaceRepository {
   LocalWorkspaceRepository(this.preferences);
 
-  static const _workspaceKey = 'voice_agent_workspace_v1';
+  static const _workspaceKey = 'voice_agent_workspace_v2';
   final SharedPreferences preferences;
 
   @override
@@ -45,13 +45,13 @@ class LocalWorkspaceRepository implements WorkspaceRepository {
   @override
   Future<WorkspaceData> load() async {
     final encoded = preferences.getString(_workspaceKey);
-    if (encoded == null) return seedWorkspace();
+    if (encoded == null) return emptyWorkspace();
     try {
       return WorkspaceData.fromJson(
         jsonDecode(encoded) as Map<String, dynamic>,
       );
     } on Object {
-      return seedWorkspace();
+      return emptyWorkspace();
     }
   }
 
@@ -129,7 +129,7 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
       headers: _headers,
     );
     if (response.statusCode == 404) {
-      final initial = seedWorkspace();
+      final initial = emptyWorkspace();
       await save(initial);
       return initial;
     }
@@ -203,156 +203,26 @@ class WorkspaceException implements Exception {
   String toString() => message;
 }
 
-WorkspaceData seedWorkspace() {
-  final now = DateTime.now();
-  final contacts = List<Contact>.generate(25, (index) {
-    const firstNames = [
-      'Avery',
-      'Jordan',
-      'Morgan',
-      'Taylor',
-      'Riley',
-      'Casey',
-      'Jamie',
-      'Parker',
-      'Quinn',
-      'Cameron',
-    ];
-    const lastNames = [
-      'Chen',
-      'Patel',
-      'Rivera',
-      'Kim',
-      'Okafor',
-      'Martinez',
-      'Nguyen',
-      'Singh',
-    ];
-    const companies = [
-      'Northstar Labs',
-      'Juniper Health',
-      'Harbor & Co.',
-      'Brightpath',
-      'Summit Works',
-      'Fieldstone',
-    ];
-    const statuses = ['New', 'Qualified', 'Nurture', 'Disqualified'];
-    final first = firstNames[index % firstNames.length];
-    final last = lastNames[index % lastNames.length];
-    return Contact(
-      id: 'contact-${index + 1}',
-      name: '$first $last',
-      phone: '+1 415 555 ${1000 + index}',
-      email: '${first.toLowerCase()}.${last.toLowerCase()}@example.com',
-      company: companies[index % companies.length],
-      jobTitle: index.isEven ? 'Head of Operations' : 'Growth Lead',
-      leadSource: index % 3 == 0 ? 'Referral' : 'Inbound call',
-      leadStatus: statuses[index % statuses.length],
-      budgetRange: index.isEven ? r'$10k–$25k' : r'$25k–$50k',
-      notes: index.isEven
-          ? 'Interested in reducing manual follow-up.'
-          : 'Asked about implementation time.',
-      createdAt: now.subtract(Duration(days: index + 2)),
-    );
-  });
-
+WorkspaceData emptyWorkspace() {
   return WorkspaceData(
     onboardingComplete: false,
-    agent: AgentConfig(
+    agent: const AgentConfig(
       id: 'lead-agent',
-      name: 'Maya',
+      type: AgentType.leadQualification,
+      name: '',
       friendliness: Friendliness.friendly,
-      persona: 'An experienced sales development representative',
-      companyName: 'Northstar',
-      companyDescription:
-          'We help growing teams qualify and follow up with inbound leads.',
-      greeting: 'Hi, you’ve reached Maya at Northstar. How can I help today?',
-      guidelines:
-          'Ask one question at a time.\nNever invent pricing.\nConfirm the caller’s email and phone number before saving.',
-      knowledgeSources: const [
-        KnowledgeSource(
-          id: 'source-1',
-          kind: KnowledgeKind.shortAnswer,
-          title: 'What does Northstar do?',
-          content: 'What does Northstar do?',
-          answer:
-              'Northstar helps growing teams qualify and follow up with inbound leads.',
-        ),
-      ],
+      persona: '',
+      companyName: '',
+      companyDescription: '',
+      greeting: '',
+      guidelines: '',
+      knowledgeSources: [],
       bookMeetingEnabled: true,
       createContactEnabled: true,
       syncStatus: SyncStatus.draft,
     ),
-    contacts: contacts,
-    meetings: List<Meeting>.generate(
-      5,
-      (index) => Meeting(
-        id: 'meeting-${index + 1}',
-        contactId: contacts[index].id,
-        contactName: contacts[index].name,
-        startsAt: now.add(Duration(days: index + 1, hours: 10 + index)),
-        status: 'Scheduled',
-      ),
-    ),
-    calls: [
-      CallRecord(
-        id: 'demo-call-1',
-        startedAt: now.subtract(const Duration(hours: 2)),
-        durationSeconds: 184,
-        callerNumber: '+1 415 555 0188',
-        resolved: true,
-        resolutionReason: 'Qualified lead booked a discovery meeting.',
-        transcript: const [
-          TranscriptMessage(
-            role: 'assistant',
-            text: 'Hi, you’ve reached Maya at Northstar. How can I help today?',
-          ),
-          TranscriptMessage(
-            role: 'caller',
-            text: 'We need a better way to follow up with inbound leads.',
-          ),
-          TranscriptMessage(
-            role: 'assistant',
-            text: 'That makes sense. What is slowing your team down today?',
-          ),
-          TranscriptMessage(
-            role: 'caller',
-            text: 'We respond too late and lose good prospects.',
-          ),
-          TranscriptMessage(
-            role: 'assistant',
-            text:
-                'I can help arrange a conversation. Would Tuesday at 10 or Wednesday at 2 work better?',
-          ),
-        ],
-        actions: const ['Created contact', 'Booked meeting'],
-        endedReason: 'customer-ended-call',
-      ),
-      CallRecord(
-        id: 'demo-call-2',
-        startedAt: now.subtract(const Duration(days: 1, hours: 3)),
-        durationSeconds: 47,
-        callerNumber: '+1 510 555 0114',
-        resolved: false,
-        resolutionReason:
-            'Caller requested a human and no handoff is available.',
-        transcript: const [
-          TranscriptMessage(
-            role: 'assistant',
-            text: 'Hi, you’ve reached Maya at Northstar. How can I help today?',
-          ),
-          TranscriptMessage(
-            role: 'caller',
-            text: 'Can I speak with a person about a custom contract?',
-          ),
-          TranscriptMessage(
-            role: 'assistant',
-            text: 'I can take a message or help book a callback.',
-          ),
-        ],
-        actions: const [],
-        endedReason: 'customer-ended-call',
-      ),
-    ],
+    contacts: const [],
+    meetings: const [],
+    calls: const [],
   );
 }

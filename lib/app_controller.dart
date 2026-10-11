@@ -36,8 +36,8 @@ class AppController extends ChangeNotifier {
     await preferences.setBool(_darkModeKey, value);
   }
 
-  Future<void> completeOnboarding() async {
-    _data = data.copyWith(onboardingComplete: true);
+  Future<void> completeOnboarding({AgentConfig? agent}) async {
+    _data = data.copyWith(onboardingComplete: true, agent: agent ?? data.agent);
     notifyListeners();
     await _persist();
   }
