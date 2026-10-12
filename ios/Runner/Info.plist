@@ -31,12 +31,18 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Customer Agent doesn’t use your camera. Voice tests with your agent are audio only.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to the Customer Agent server on your network to set up your agent and phone number.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Use your microphone to test your voice agent.</string>
+	<string>Customer Agent uses your microphone so you can talk with your agent during a voice test.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

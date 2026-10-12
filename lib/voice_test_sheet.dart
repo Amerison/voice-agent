@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:vapi/vapi.dart';
 
 import 'app_controller.dart';
@@ -26,6 +27,7 @@ Future<void> showVoiceTestSheet(
 
 enum _VoiceTestState {
   preparing,
+  microphoneOff,
   connecting,
   listening,
   speaking,
@@ -77,6 +79,7 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
       );
       return;
     }
+    if (!await _microphoneAllowed()) return;
     try {
       final controller = widget.controller;
       // Live mode tests the synced assistant so the call lands in Calls.
@@ -120,6 +123,16 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
     } on Object catch (error) {
       _fail(_friendlyError(error));
     }
+  }
+
+  /// Asks for the microphone before a Vapi call exists. Vapi's SDK starts the
+  /// call even when access is denied, which would bill a call that can't hear.
+  /// iOS shows its prompt only once; after a denial this returns false at once.
+  Future<bool> _microphoneAllowed() async {
+    final status = await Permission.microphone.request();
+    if (status.isGranted) return true;
+    if (mounted) setState(() => _state = _VoiceTestState.microphoneOff);
+    return false;
   }
 
   void _handleEvent(VapiEvent event) {
@@ -329,11 +342,20 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
   String get _statusLine => switch (_state) {
     _VoiceTestState.preparing || _VoiceTestState.connecting => 'Calling…',
     _VoiceTestState.listening || _VoiceTestState.speaking => _elapsed,
+    _VoiceTestState.microphoneOff => 'Microphone off',
     _VoiceTestState.ended => 'Call ended · $_elapsed',
     _VoiceTestState.error => 'Call failed',
   };
 
   Widget _middle() {
+    if (_state == _VoiceTestState.microphoneOff) {
+      return _CallMessage(
+        key: const ValueKey('microphone'),
+        title: 'Allow microphone access',
+        detail:
+            'Turn on Microphone for Customer Agent in Settings so you can talk with ${widget.controller.data.agent.name}.',
+      );
+    }
     if (_state == _VoiceTestState.error) {
       return _CallMessage(
         key: const ValueKey('error'),
@@ -363,6 +385,7 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
     final active = _isActive;
     final over =
         _state == _VoiceTestState.ended || _state == _VoiceTestState.error;
+    final microphoneOff = _state == _VoiceTestState.microphoneOff;
     final name = widget.controller.data.agent.name;
     return PopScope(
       canPop: false,
@@ -414,7 +437,24 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
                     padding: const EdgeInsets.fromLTRB(36, 8, 36, 28),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: over
+                      children: microphoneOff
+                          ? [
+                              _DialButton(
+                                icon: CupertinoIcons.settings,
+                                label: 'Settings',
+                                color: _callGreen,
+                                tooltip: 'Open Settings',
+                                onTap: openAppSettings,
+                              ),
+                              const SizedBox(width: 56),
+                              _DialButton(
+                                icon: CupertinoIcons.xmark,
+                                label: 'Done',
+                                tooltip: 'Close voice test',
+                                onTap: _close,
+                              ),
+                            ]
+                          : over
                           ? [
                               _DialButton(
                                 icon: CupertinoIcons.phone_fill,

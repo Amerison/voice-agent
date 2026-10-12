@@ -42,6 +42,7 @@ dependencies:
       url: https://github.com/VapiAI/client-sdk-flutter.git
       ref: 16b6769bb9f4040773d29c8e7546834b32c3e058
   audioplayers: ^6.7.1
+  permission_handler: ^11.4.0
 
 dev_dependencies:
   flutter_test:
