@@ -608,8 +608,14 @@ class CallRecord {
     id: json['id'] as String,
     startedAt: DateTime.parse(json['startedAt'] as String),
     durationSeconds: (json['durationSeconds'] as num?)?.round() ?? 0,
-    callerNumber: json['callerNumber'] as String? ?? 'Unknown caller',
-    isTest: json['isTest'] as bool? ?? json['callerNumber'] == 'Web test call',
+    callerNumber: switch (json['callerNumber'] as String?) {
+      null => 'Unknown caller',
+      'Web test call' => 'Test Call',
+      final caller => caller,
+    },
+    isTest:
+        json['isTest'] as bool? ??
+        const {'Web test call', 'Test Call'}.contains(json['callerNumber']),
     resolved: json['resolved'] as bool? ?? false,
     resolutionReason: json['resolutionReason'] as String? ?? 'Not analyzed',
     transcript: ((json['transcript'] as List?) ?? const [])

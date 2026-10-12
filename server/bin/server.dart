@@ -529,7 +529,7 @@ class ApiServer {
           .clamp(0, 43200),
       'callerNumber':
           customer['number'] as String? ??
-          (call['type'] == 'webCall' ? 'Web test call' : 'Unknown caller'),
+          (call['type'] == 'webCall' ? 'Test Call' : 'Unknown caller'),
       'isTest': call['type'] == 'webCall',
       'resolved': resolution.$1,
       'resolutionReason': resolution.$2,
