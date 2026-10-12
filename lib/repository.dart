@@ -9,12 +9,15 @@ import 'models.dart';
 
 const _apiBaseUrlDefine = String.fromEnvironment('API_BASE_URL');
 
+/// The server deployed from `server/fly.toml`. Set to '' to ship demo mode.
+const _productionApiBaseUrl = 'https://voice-agent-glazia.fly.dev';
+
 /// Empty means demo mode. Release builds go to TestFlight and the App Store,
 /// where a plain-HTTP development server on a home network is unreachable, so
-/// they only accept an HTTPS server.
+/// they use an HTTPS server: one passed with --dart-define, or production.
 final apiBaseUrl =
     kReleaseMode && !_apiBaseUrlDefine.trim().startsWith('https://')
-    ? ''
+    ? _productionApiBaseUrl
     : _apiBaseUrlDefine;
 
 abstract class WorkspaceRepository {

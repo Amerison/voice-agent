@@ -66,9 +66,10 @@ iOS builds started any other way (Xcode Run or Archive, an IDE Run button, or
 plain `flutter run`) fill in those same two values from `.env` through
 `tool/xcode_dart_defines.sh`, which the Xcode build phase loads. Values passed
 with `--dart-define` take priority. `API_BASE_URL` is only read from `.env` for
-Debug builds, so Release builds (including Xcode Archive and TestFlight) run in
-demo mode. Release builds also ignore any `API_BASE_URL` that isn't `https://`,
-so a home-network address can't ship to testers.
+Debug builds. Release builds (including Xcode Archive and TestFlight) use the
+production server at `https://voice-agent-glazia.fly.dev`, set in
+`lib/repository.dart`, unless an `https://` `API_BASE_URL` is passed with
+`--dart-define`. A home-network address can't ship to testers.
 
 `VAPI_PUBLIC_KEY` is Vapi's client-safe public key and powers the in-app voice
 test. Allow the synced assistant and enable transient assistants on that key so
@@ -114,8 +115,8 @@ flutter test
 
 ## TestFlight checklist
 
-1. Deploy the server to a persistent HTTPS host and set `VAPI_PRIVATE_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `PUBLIC_BASE_URL`, and `DATA_FILE`.
-2. Archive as-is for a demo-mode build, or pass the production API URL to go live: `flutter build ipa --dart-define=API_BASE_URL=https://api.example.com`.
+1. Deploy the server: `cd server && fly deploy`. `server/fly.toml` runs one always-on machine with the `voice_agent_data` volume at `/data`. Secrets (`VAPI_PRIVATE_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `PUBLIC_BASE_URL`) are set with `fly secrets set`; check them with `curl https://voice-agent-glazia.fly.dev/health`.
+2. Release builds point at that server by default. To ship demo mode instead, set `_productionApiBaseUrl` in `lib/repository.dart` to `''`.
 3. Confirm the iOS bundle ID and App Store Connect app record.
 4. Archive and upload the build from Xcode.
 5. Add internal testers and complete a resolved and unresolved call walkthrough.

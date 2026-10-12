@@ -252,6 +252,9 @@ class AppController extends ChangeNotifier {
   String _message(Object exception) {
     if (exception is WorkspaceException) return exception.message;
     if (exception is ClientException) {
+      if (kReleaseMode) {
+        return 'Can’t reach Customer Agent right now. Check your internet connection and try again.';
+      }
       return 'Can’t reach the app server at $apiBaseUrl. Start the server run script, then try again.';
     }
     return 'Something went wrong. Check the connection and try again.';
