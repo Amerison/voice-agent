@@ -6,6 +6,7 @@ import 'app_controller.dart';
 import 'call_sheet.dart';
 import 'contact_screens.dart';
 import 'models.dart';
+import 'number_picker.dart';
 import 'repository.dart';
 import 'theme.dart';
 import 'voice_test_sheet.dart';
@@ -1474,17 +1475,14 @@ class DeployScreen extends StatelessWidget {
   }
 
   Future<void> _provision(BuildContext context) async {
-    final value = await showTextPrompt(
+    final choice = await showNumberPicker(
       context,
-      title: 'Choose area code',
-      label: 'US area code',
-      hint: '628',
-      keyboardType: TextInputType.number,
-      maxLength: 3,
+      controller,
+      doneLabel: 'Get',
     );
-    if (value == null || !context.mounted) return;
+    if (choice == null || !context.mounted) return;
     try {
-      await controller.provisionNumber(value.trim());
+      await controller.provisionNumber(choice.areaCode, number: choice.number);
     } on WorkspaceException catch (error) {
       if (context.mounted) showHubMessage(context, error.message);
     }
@@ -1562,10 +1560,12 @@ class _ChecklistItem extends StatelessWidget {
             color: done ? HubColors.success : HubColors.textSubtle,
           ),
           const SizedBox(width: 12),
-          Text(
-            text,
-            style: TextStyle(
-              color: done ? HubColors.text : HubColors.textMuted,
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: done ? HubColors.text : HubColors.textMuted,
+              ),
             ),
           ),
         ],

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import 'app_controller.dart';
 import 'models.dart';
+import 'number_picker.dart';
 import 'repository.dart';
 import 'theme.dart';
 import 'voice_test_sheet.dart';
@@ -158,26 +159,22 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   Future<void> _changeAreaCode() async {
-    final value = await showTextPrompt(
+    final choice = await showNumberPicker(
       context,
-      title: 'Choose area code',
-      label: 'US area code',
-      hint: _areaCode,
-      keyboardType: TextInputType.number,
-      maxLength: 3,
+      widget.controller,
+      doneLabel: 'Use',
+      initialAreaCode: _areaCode,
     );
-    if (value == null || !mounted) return;
-    final areaCode = value.trim();
-    if (!RegExp(r'^\d{3}$').hasMatch(areaCode)) {
-      showHubMessage(context, 'Enter a three-digit US area code.');
-      return;
-    }
+    if (choice == null || !mounted) return;
     setState(() {
-      _areaCode = areaCode;
-      _available = null;
-      _demoNumber = '+1$areaCode${_demoNumber.substring(5)}';
+      _areaCode = choice.areaCode;
+      if (widget.controller.isDemo) {
+        _demoNumber = choice.number ?? _demoNumber;
+      } else {
+        _available = choice.number;
+      }
     });
-    await _lookUpNumber();
+    if (choice.number == null) await _lookUpNumber();
   }
 
   @override

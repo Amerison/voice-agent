@@ -287,6 +287,39 @@ void main() {
     expect(find.textContaining('Demo mode'), findsNothing);
   });
 
+  testWidgets('picks a phone number on a full-screen page from Deploy', (
+    tester,
+  ) async {
+    usePhoneSize(tester);
+    final controller = await readyController();
+
+    await tester.pumpWidget(VoiceAgentApp(controller: controller));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Deploy'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -500));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Get number'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('New number'), findsOneWidget);
+    expect(find.text('(628) 555-0142'), findsOneWidget);
+
+    await tester.tap(find.textContaining('Oakland'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('(510) 555-0142'), findsOneWidget);
+
+    await tester.tap(find.text('Get'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New number'), findsNothing);
+    expect(controller.data.agent.phoneNumber, '+15105550142');
+    expect(find.text('(510) 555-0142'), findsWidgets);
+  });
+
   testWidgets('changes and persists the appearance from Settings', (
     tester,
   ) async {
