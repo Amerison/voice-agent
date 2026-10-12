@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' show ClientException;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
@@ -190,6 +191,9 @@ class AppController extends ChangeNotifier {
 
   String _message(Object exception) {
     if (exception is WorkspaceException) return exception.message;
+    if (exception is ClientException) {
+      return 'Can’t reach the app server at $apiBaseUrl. Start the server run script, then try again.';
+    }
     return 'Something went wrong. Check the connection and try again.';
   }
 
