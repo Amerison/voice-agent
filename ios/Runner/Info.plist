@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Customer Agent</string>
+	<string>HubSpot Test</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Customer Agent</string>
+	<string>HubSpot Test</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -32,11 +32,11 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Customer Agent doesn’t use your camera. Voice tests with your agent are audio only.</string>
+	<string>HubSpot Test doesn’t use your camera. Voice tests with your agent are audio only.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connect to the Customer Agent server on your network to set up your agent and phone number.</string>
+	<string>Connect to the HubSpot Test server on your network to set up your agent and phone number.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Customer Agent uses your microphone so you can talk with your agent during a voice test.</string>
+	<string>HubSpot Test uses your microphone so you can talk with your agent during a voice test.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

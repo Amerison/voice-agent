@@ -17,7 +17,7 @@ class VoiceAgentApp extends StatelessWidget {
       builder: (context, _) {
         HubColors.useDarkMode(controller.isDarkMode);
         return MaterialApp(
-          title: 'Customer Agent',
+          title: 'HubSpot Test',
           debugShowCheckedModeBanner: false,
           theme: buildHubTheme(Brightness.light),
           darkTheme: buildHubTheme(Brightness.dark),

@@ -364,7 +364,7 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
         key: const ValueKey('microphone'),
         title: 'Allow microphone access',
         detail:
-            'Turn on Microphone for Customer Agent in Settings so you can talk with ${widget.controller.data.agent.name}.',
+            'Turn on Microphone for HubSpot Test in Settings so you can talk with ${widget.controller.data.agent.name}.',
       );
     }
     if (_state == _VoiceTestState.error) {
