@@ -1,4 +1,4 @@
-# Voice Agent
+# Customer Agent
 
 An iOS-first Flutter app for configuring a lead-qualification voice agent, provisioning an inbound Vapi number, reviewing calls, and managing a lightweight CRM.
 
