@@ -62,6 +62,12 @@ LAN address (`ipconfig getifaddr en0`), for example `http://10.0.0.196:8080`:
 tool/run.sh -d <device-id>
 ```
 
+iOS builds started any other way (Xcode Run or Archive, an IDE Run button, or
+plain `flutter run`) fill in those same two values from `.env` through
+`tool/xcode_dart_defines.sh`, which the Xcode build phase loads. Values passed
+with `--dart-define` take priority. To build demo mode, comment out
+`API_BASE_URL` in `.env`.
+
 `VAPI_PUBLIC_KEY` is Vapi's client-safe public key and powers the in-app voice
 test. Allow the synced assistant and enable transient assistants on that key so
 unsynced drafts can be tested too. Keep `VAPI_PRIVATE_KEY` on the server only.

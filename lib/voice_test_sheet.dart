@@ -75,7 +75,7 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
   Future<void> _start() async {
     if (_vapiPublicKey.trim().isEmpty) {
       _fail(
-        'Vapi’s public key is missing. Start the app with tool/run.sh so it reads VAPI_PUBLIC_KEY from .env.',
+        'Vapi’s public key is missing. Add VAPI_PUBLIC_KEY to .env, then rebuild the app.',
       );
       return;
     }
