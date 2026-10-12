@@ -87,6 +87,59 @@ void main() {
     ]);
   });
 
+  test('carries the lead verdict from call analysis', () async {
+    final store = await createStore();
+    final vapi = VapiClient(
+      privateKey: 'test',
+      httpClient: MockClient(
+        (_) async => http.Response(
+          jsonEncode([
+            {
+              'id': 'call-1',
+              'type': 'inboundPhoneCall',
+              'status': 'ended',
+              'startedAt': '2026-10-11T10:00:00Z',
+              'endedAt': '2026-10-11T10:02:00Z',
+              'artifact': {
+                'structuredOutputs': {
+                  'output-1': {
+                    'name': 'Call analysis',
+                    'result': {
+                      'resolved': true,
+                      'reason': 'Booked a meeting.',
+                      'leadOutcome': 'qualified',
+                      'leadReason': r'Homeowner with a $30k budget.',
+                      'answers': [
+                        {'question': 'Budget?', 'answer': r'$30k'},
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          ]),
+          200,
+        ),
+      ),
+    );
+    final api = ApiServer(store: store, vapi: vapi, publicBaseUrl: '');
+
+    final result = await refresh(api, {
+      'agent': {'id': 'agent-1', 'name': 'Maya', 'vapiAssistantId': 'asst-1'},
+      'calls': <dynamic>[],
+    });
+    final call = (result['workspace']['calls'] as List).single as Map;
+
+    expect(call['resolved'], isTrue);
+    expect(call['lead'], {
+      'outcome': 'qualified',
+      'reason': r'Homeowner with a $30k budget.',
+      'answers': [
+        {'question': 'Budget?', 'answer': r'$30k'},
+      ],
+    });
+  });
+
   test('merges contacts from calls into the app’s CRM', () async {
     final store = await createStore();
     final vapi = VapiClient(

@@ -150,8 +150,20 @@ class ApiServer {
         final created = await vapi.createAssistant(payload);
         assistantId = created['id'] as String;
       }
+      final analysis = buildCallAnalysis(agent);
+      if (outputId != null && outputId.isNotEmpty) {
+        try {
+          await vapi.updateStructuredOutput(outputId, analysis);
+        } on VapiException catch (error) {
+          if (error.statusCode != 404) rethrow;
+          outputId = null;
+        }
+      }
       if (outputId == null || outputId.isEmpty) {
-        final created = await vapi.createStructuredOutput(assistantId);
+        final created = await vapi.createStructuredOutput(
+          assistantId,
+          analysis,
+        );
         outputId = created['id'] as String;
       }
       payload = _assistantPayload(
@@ -504,6 +516,7 @@ class ApiServer {
       'messages': artifact['messages'] ?? call['messages'],
     }, transcriptText);
     final resolution = _resolution(artifact, transcriptText, actions);
+    final lead = _findLead(artifact['structuredOutputs']);
     final startedAt = _date(call['startedAt']) ?? DateTime.now().toUtc();
     final endedAt = _date(call['endedAt']) ?? startedAt;
     final customer = _objectOrEmpty(call['customer']);
@@ -523,6 +536,7 @@ class ApiServer {
       'transcript': transcript,
       'actions': actions,
       'endedReason': call['endedReason'] as String? ?? 'unknown',
+      'lead': ?lead,
     };
   }
 
@@ -868,6 +882,37 @@ class ApiServer {
     } else if (value is List) {
       for (final nested in value) {
         final found = _findResolution(nested);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
+  /// The lead verdict from [buildCallAnalysis], wherever Vapi nests it.
+  Map<String, dynamic>? _findLead(dynamic value) {
+    if (value is Map) {
+      final outcome = value['leadOutcome'];
+      if (const {'qualified', 'followUp', 'notAFit'}.contains(outcome)) {
+        return {
+          'outcome': outcome,
+          'reason': value['leadReason']?.toString() ?? '',
+          'answers': [
+            for (final item in (value['answers'] as List? ?? const []))
+              if (item is Map)
+                {
+                  'question': item['question']?.toString() ?? '',
+                  'answer': item['answer']?.toString() ?? '',
+                },
+          ],
+        };
+      }
+      for (final nested in value.values) {
+        final found = _findLead(nested);
+        if (found != null) return found;
+      }
+    } else if (value is List) {
+      for (final nested in value) {
+        final found = _findLead(nested);
         if (found != null) return found;
       }
     }

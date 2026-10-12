@@ -96,13 +96,17 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
       if (mounted) setState(() => _state = _VoiceTestState.connecting);
       await VapiClient.platformInitialized.future;
       _client = VapiClient(_vapiPublicKey.trim());
-      debugPrint('DIAG sheet: start() calling ${DateTime.now().toIso8601String()}');
+      debugPrint(
+        'DIAG sheet: start() calling ${DateTime.now().toIso8601String()}',
+      );
       final call = await _client!.start(
         assistantId: useSavedAssistant ? agent.vapiAssistantId : null,
         assistant: useSavedAssistant ? null : _transientAssistant(agent),
         assistantOverrides: const {'recordingEnabled': false},
       );
-      debugPrint('DIAG sheet: start() returned status=${call.status} mounted=$mounted');
+      debugPrint(
+        'DIAG sheet: start() returned status=${call.status} mounted=$mounted',
+      );
       if (!mounted) {
         await call.stop();
         call.dispose();

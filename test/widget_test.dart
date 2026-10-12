@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:voice_agent/app.dart';
 import 'package:voice_agent/app_controller.dart';
 import 'package:voice_agent/models.dart';
+import 'package:voice_agent/qualification_screen.dart';
 import 'package:voice_agent/repository.dart';
 
 Future<AppController> readyController({
@@ -82,7 +83,7 @@ void main() {
     );
   });
 
-  testWidgets('starts with use-case selection and reveals a number', (
+  testWidgets('starts with use-case selection without a number preview', (
     tester,
   ) async {
     usePhoneSize(tester);
@@ -93,11 +94,11 @@ void main() {
 
     expect(find.text('AI receptionist'), findsOneWidget);
     expect(find.text('AI lead qualification'), findsOneWidget);
-    expect(find.text('Your agent’s new number'), findsNothing);
 
     await tester.tap(find.text('AI receptionist'));
     await settle(tester);
-    expect(find.text('Your agent’s new number'), findsOneWidget);
+    expect(find.text('Your agent’s new number'), findsNothing);
+    expect(find.text('Keep or port your own number later'), findsNothing);
   });
 
   testWidgets('walks through onboarding onto an empty workspace', (
@@ -277,6 +278,51 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text('Shape who answers the phone and how they sound.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('offers qualification settings only to lead agents', (
+    tester,
+  ) async {
+    usePhoneSize(tester);
+    final controller = await readyController();
+
+    await tester.pumpWidget(VoiceAgentApp(controller: controller));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Qualification'), findsNothing);
+
+    await controller.updateAgent(
+      controller.data.agent.copyWith(type: AgentType.leadQualification),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Qualification'));
+    await tester.pumpAndSettle();
+    expect(find.text('What problem are you hoping to solve?'), findsOneWidget);
+
+    final page = find
+        .descendant(
+          of: find.byType(QualificationScreen),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final budget = find.widgetWithText(TextField, 'Minimum budget');
+    await tester.scrollUntilVisible(budget, 300, scrollable: page);
+    await tester.enterText(budget, r'$5,000');
+    final save = find.text('Save qualification');
+    await tester.scrollUntilVisible(save, 300, scrollable: page);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(controller.data.agent.qualification.minimumBudget, r'$5,000');
+
+    await controller.updateAgent(
+      controller.data.agent.copyWith(type: AgentType.receptionist),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text('Home')),
       findsOneWidget,
     );
   });

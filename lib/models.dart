@@ -20,6 +20,171 @@ enum AgentType {
   bool get isAvailable => this == receptionist || this == leadQualification;
 }
 
+/// Details the agent confirms before saving a lead. Name is always collected.
+enum LeadField {
+  phone('Phone number'),
+  email('Email'),
+  company('Company'),
+  jobTitle('Job title'),
+  budget('Budget range');
+
+  const LeadField(this.label);
+
+  final String label;
+}
+
+class QualifyingQuestion {
+  const QualifyingQuestion({
+    required this.id,
+    required this.text,
+    this.required = true,
+  });
+
+  final String id;
+  final String text;
+  final bool required;
+
+  QualifyingQuestion copyWith({String? text, bool? required}) =>
+      QualifyingQuestion(
+        id: id,
+        text: text ?? this.text,
+        required: required ?? this.required,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'text': text,
+    'required': required,
+  };
+
+  factory QualifyingQuestion.fromJson(Map<String, dynamic> json) =>
+      QualifyingQuestion(
+        id: json['id'] as String,
+        text: json['text'] as String? ?? '',
+        required: json['required'] as bool? ?? true,
+      );
+}
+
+/// What a lead qualification agent asks, how it decides who's a fit, and
+/// what it does with each kind of caller.
+class LeadQualification {
+  const LeadQualification({
+    this.idealCustomer = '',
+    this.questions = defaultQuestions,
+    this.minimumBudget = '',
+    this.startWithinMonths = 0,
+    this.requireDecisionMaker = false,
+    this.disqualifiers = defaultDisqualifiers,
+    this.meetingMinutes = 30,
+    this.notAFitMessage = '',
+    this.collect = const {LeadField.phone, LeadField.email},
+  });
+
+  static const defaultQuestions = [
+    QualifyingQuestion(
+      id: 'need',
+      text: 'What problem are you hoping to solve?',
+    ),
+    QualifyingQuestion(
+      id: 'timeline',
+      text: 'When are you hoping to get started?',
+    ),
+    QualifyingQuestion(
+      id: 'budget',
+      text: 'What budget range do you have in mind?',
+    ),
+    QualifyingQuestion(
+      id: 'authority',
+      text: 'Who else is involved in the decision?',
+      required: false,
+    ),
+  ];
+
+  static const defaultDisqualifiers = [
+    'Looking for a job',
+    'Selling a product or service to us',
+  ];
+
+  final String idealCustomer;
+  final List<QualifyingQuestion> questions;
+  final String minimumBudget;
+
+  /// 0 means any timeline is fine.
+  final int startWithinMonths;
+  final bool requireDecisionMaker;
+  final List<String> disqualifiers;
+  final int meetingMinutes;
+
+  /// Said to callers who aren't a fit, such as a link to a guide.
+  final String notAFitMessage;
+  final Set<LeadField> collect;
+
+  LeadQualification copyWith({
+    String? idealCustomer,
+    List<QualifyingQuestion>? questions,
+    String? minimumBudget,
+    int? startWithinMonths,
+    bool? requireDecisionMaker,
+    List<String>? disqualifiers,
+    int? meetingMinutes,
+    String? notAFitMessage,
+    Set<LeadField>? collect,
+  }) => LeadQualification(
+    idealCustomer: idealCustomer ?? this.idealCustomer,
+    questions: questions ?? this.questions,
+    minimumBudget: minimumBudget ?? this.minimumBudget,
+    startWithinMonths: startWithinMonths ?? this.startWithinMonths,
+    requireDecisionMaker: requireDecisionMaker ?? this.requireDecisionMaker,
+    disqualifiers: disqualifiers ?? this.disqualifiers,
+    meetingMinutes: meetingMinutes ?? this.meetingMinutes,
+    notAFitMessage: notAFitMessage ?? this.notAFitMessage,
+    collect: collect ?? this.collect,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'idealCustomer': idealCustomer,
+    'questions': questions.map((item) => item.toJson()).toList(),
+    'minimumBudget': minimumBudget,
+    'startWithinMonths': startWithinMonths,
+    'requireDecisionMaker': requireDecisionMaker,
+    'disqualifiers': disqualifiers,
+    'meetingMinutes': meetingMinutes,
+    'notAFitMessage': notAFitMessage,
+    'collect': [
+      for (final field in LeadField.values)
+        if (collect.contains(field)) field.name,
+    ],
+  };
+
+  factory LeadQualification.fromJson(Map<String, dynamic> json) =>
+      LeadQualification(
+        idealCustomer: json['idealCustomer'] as String? ?? '',
+        questions: json['questions'] is List
+            ? (json['questions'] as List)
+                  .map(
+                    (item) => QualifyingQuestion.fromJson(
+                      item as Map<String, dynamic>,
+                    ),
+                  )
+                  .toList()
+            : defaultQuestions,
+        minimumBudget: json['minimumBudget'] as String? ?? '',
+        startWithinMonths: (json['startWithinMonths'] as num?)?.toInt() ?? 0,
+        requireDecisionMaker: json['requireDecisionMaker'] as bool? ?? false,
+        disqualifiers: json['disqualifiers'] is List
+            ? (json['disqualifiers'] as List).cast<String>()
+            : defaultDisqualifiers,
+        meetingMinutes: (json['meetingMinutes'] as num?)?.toInt() ?? 30,
+        notAFitMessage: json['notAFitMessage'] as String? ?? '',
+        collect: json['collect'] is List
+            ? {
+                for (final name in (json['collect'] as List).cast<String>())
+                  ?LeadField.values.asNameMap()[name],
+              }
+            : const {LeadField.phone, LeadField.email},
+      );
+}
+
 class KnowledgeSource {
   const KnowledgeSource({
     required this.id,
@@ -76,6 +241,7 @@ class AgentConfig {
     required this.bookMeetingEnabled,
     required this.createContactEnabled,
     this.qualifyLeadsEnabled = true,
+    this.qualification = const LeadQualification(),
     required this.syncStatus,
     this.voice = 'Elliot',
     this.calendarConnected = false,
@@ -103,6 +269,7 @@ class AgentConfig {
 
   /// Off hides qualified leads from reports and stops the agent tagging them.
   final bool qualifyLeadsEnabled;
+  final LeadQualification qualification;
   final SyncStatus syncStatus;
 
   /// Vapi built-in voice id.
@@ -131,6 +298,7 @@ class AgentConfig {
     bool? bookMeetingEnabled,
     bool? createContactEnabled,
     bool? qualifyLeadsEnabled,
+    LeadQualification? qualification,
     SyncStatus? syncStatus,
     String? voice,
     bool? calendarConnected,
@@ -156,6 +324,7 @@ class AgentConfig {
     bookMeetingEnabled: bookMeetingEnabled ?? this.bookMeetingEnabled,
     createContactEnabled: createContactEnabled ?? this.createContactEnabled,
     qualifyLeadsEnabled: qualifyLeadsEnabled ?? this.qualifyLeadsEnabled,
+    qualification: qualification ?? this.qualification,
     syncStatus: syncStatus ?? this.syncStatus,
     voice: voice ?? this.voice,
     calendarConnected: calendarConnected ?? this.calendarConnected,
@@ -183,6 +352,7 @@ class AgentConfig {
     'bookMeetingEnabled': bookMeetingEnabled,
     'createContactEnabled': createContactEnabled,
     'qualifyLeadsEnabled': qualifyLeadsEnabled,
+    'qualification': qualification.toJson(),
     'syncStatus': syncStatus.name,
     'voice': voice,
     'calendarConnected': calendarConnected,
@@ -213,6 +383,11 @@ class AgentConfig {
     bookMeetingEnabled: json['bookMeetingEnabled'] as bool? ?? true,
     createContactEnabled: json['createContactEnabled'] as bool? ?? true,
     qualifyLeadsEnabled: json['qualifyLeadsEnabled'] as bool? ?? true,
+    qualification: json['qualification'] is Map<String, dynamic>
+        ? LeadQualification.fromJson(
+            json['qualification'] as Map<String, dynamic>,
+          )
+        : const LeadQualification(),
     syncStatus: SyncStatus.values.byName(
       json['syncStatus'] as String? ?? 'draft',
     ),
@@ -333,6 +508,57 @@ class TranscriptMessage {
       );
 }
 
+enum LeadOutcome {
+  qualified('Qualified'),
+  followUp('Follow up'),
+  notAFit('Not a fit');
+
+  const LeadOutcome(this.label);
+
+  final String label;
+}
+
+/// Post-call verdict on a lead qualification call.
+class LeadResult {
+  const LeadResult({
+    required this.outcome,
+    required this.reason,
+    this.answers = const [],
+  });
+
+  final LeadOutcome outcome;
+  final String reason;
+  final List<({String question, String answer})> answers;
+
+  Map<String, dynamic> toJson() => {
+    'outcome': outcome.name,
+    'reason': reason,
+    'answers': [
+      for (final item in answers)
+        {'question': item.question, 'answer': item.answer},
+    ],
+  };
+
+  static LeadResult? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final outcome = LeadOutcome.values.asNameMap()[json['outcome']];
+    if (outcome == null) return null;
+    return LeadResult(
+      outcome: outcome,
+      reason: json['reason'] as String? ?? '',
+      answers: [
+        for (final item
+            in (json['answers'] as List? ?? const [])
+                .whereType<Map<String, dynamic>>())
+          (
+            question: item['question']?.toString() ?? '',
+            answer: item['answer']?.toString() ?? '',
+          ),
+      ],
+    );
+  }
+}
+
 class CallRecord {
   const CallRecord({
     required this.id,
@@ -345,6 +571,7 @@ class CallRecord {
     required this.actions,
     required this.endedReason,
     this.isTest = false,
+    this.lead,
   });
 
   final String id;
@@ -360,6 +587,9 @@ class CallRecord {
   final List<String> actions;
   final String endedReason;
 
+  /// Null unless a lead qualification agent took the call.
+  final LeadResult? lead;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'startedAt': startedAt.toIso8601String(),
@@ -371,6 +601,7 @@ class CallRecord {
     'transcript': transcript.map((item) => item.toJson()).toList(),
     'actions': actions,
     'endedReason': endedReason,
+    'lead': ?lead?.toJson(),
   };
 
   factory CallRecord.fromJson(Map<String, dynamic> json) => CallRecord(
@@ -378,8 +609,7 @@ class CallRecord {
     startedAt: DateTime.parse(json['startedAt'] as String),
     durationSeconds: (json['durationSeconds'] as num?)?.round() ?? 0,
     callerNumber: json['callerNumber'] as String? ?? 'Unknown caller',
-    isTest:
-        json['isTest'] as bool? ?? json['callerNumber'] == 'Web test call',
+    isTest: json['isTest'] as bool? ?? json['callerNumber'] == 'Web test call',
     resolved: json['resolved'] as bool? ?? false,
     resolutionReason: json['resolutionReason'] as String? ?? 'Not analyzed',
     transcript: ((json['transcript'] as List?) ?? const [])
@@ -387,6 +617,7 @@ class CallRecord {
         .toList(),
     actions: ((json['actions'] as List?) ?? const []).cast<String>(),
     endedReason: json['endedReason'] as String? ?? 'unknown',
+    lead: LeadResult.fromJson(json['lead']),
   );
 }
 

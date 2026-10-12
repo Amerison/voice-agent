@@ -19,29 +19,24 @@ class VapiClient {
     Map<String, dynamic> payload,
   ) async => await _request('PATCH', '/assistant/$id', payload);
 
+  /// [definition] holds the output's name, description, and schema.
   Future<Map<String, dynamic>> createStructuredOutput(
     String assistantId,
+    Map<String, dynamic> definition,
   ) async => await _request('POST', '/structured-output', {
-    'name': 'Call resolution',
+    ...definition,
     'type': 'ai',
-    'description':
-        'Determine whether the caller achieved their goal. Tool failures, requests for a human, and calls ending mid-task are unresolved.',
-    'schema': {
-      'type': 'object',
-      'properties': {
-        'resolved': {
-          'type': 'boolean',
-          'description': 'Whether the caller completed their main goal.',
-        },
-        'reason': {
-          'type': 'string',
-          'description': 'A concise reason for the resolution decision.',
-        },
-      },
-      'required': ['resolved', 'reason'],
-    },
     'assistantIds': [assistantId],
   });
+
+  Future<Map<String, dynamic>> updateStructuredOutput(
+    String id,
+    Map<String, dynamic> definition,
+  ) async => await _request(
+    'PATCH',
+    '/structured-output/$id?schemaOverride=false',
+    definition,
+  );
 
   /// Hands a Twilio number to Vapi, which points the number's voice webhook at
   /// [assistantId]. The number's messaging settings are left alone.

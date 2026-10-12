@@ -355,7 +355,11 @@ List<_Activity> _activitiesFor(Contact contact, WorkspaceData data) {
         _Activity(
           title: 'Inbound call',
           date: call.startedAt,
-          body: call.resolutionReason,
+          body: switch (call.lead) {
+            final lead? when lead.reason.isNotEmpty =>
+              '${lead.outcome.label}: ${lead.reason}',
+            _ => call.resolutionReason,
+          },
           call: call,
         ),
     for (final meeting in data.meetings)

@@ -7,6 +7,7 @@ import 'call_sheet.dart';
 import 'contact_screens.dart';
 import 'models.dart';
 import 'number_picker.dart';
+import 'qualification_screen.dart';
 import 'repository.dart';
 import 'theme.dart';
 import 'voice_test_sheet.dart';
@@ -59,7 +60,16 @@ const _bottomDestinations = [
   _Destination('CRM', CupertinoIcons.person_crop_rectangle),
 ];
 
-enum _WorkspaceRoute { home, train, crm, identity, deploy, calls, settings }
+enum _WorkspaceRoute {
+  home,
+  train,
+  crm,
+  identity,
+  qualification,
+  deploy,
+  calls,
+  settings,
+}
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({super.key, required this.controller});
@@ -85,11 +95,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   void _selectRoute(_WorkspaceRoute route) => setState(() => _route = route);
 
-  String get _routeTitle => switch (_route) {
+  String _title(_WorkspaceRoute route) => switch (route) {
     _WorkspaceRoute.home => 'Home',
     _WorkspaceRoute.train => 'Train',
     _WorkspaceRoute.crm => 'Contacts',
     _WorkspaceRoute.identity => 'Identity',
+    _WorkspaceRoute.qualification => 'Qualification',
     _WorkspaceRoute.deploy => 'Deploy',
     _WorkspaceRoute.calls => 'Calls',
     _WorkspaceRoute.settings => 'Settings',
@@ -98,11 +109,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
+    // Switching to another agent type hides Qualification from the menu.
+    final route =
+        _route == _WorkspaceRoute.qualification &&
+            controller.data.agent.type != AgentType.leadQualification
+        ? _WorkspaceRoute.home
+        : _route;
     final pages = [
       HomeScreen(controller: controller),
       TrainScreen(controller: controller),
       CrmScreen(controller: controller),
       IdentityScreen(controller: controller),
+      QualificationScreen(controller: controller),
       DeployScreen(controller: controller),
       CallsScreen(controller: controller),
       SettingsScreen(controller: controller),
@@ -110,14 +128,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return Scaffold(
       drawer: _WorkspaceDrawer(
         controller: controller,
-        selectedRoute: _route,
+        selectedRoute: route,
         onSelect: (route) {
           Navigator.pop(context);
           _selectRoute(route);
         },
       ),
       appBar: AppBar(
-        title: Text(_routeTitle),
+        title: Text(_title(route)),
         centerTitle: true,
         leading: Builder(
           builder: (context) => IconButton(
@@ -146,7 +164,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             ),
           if (controller.isBusy) const LinearProgressIndicator(minHeight: 2),
           Expanded(
-            child: IndexedStack(index: _route.index, children: pages),
+            child: IndexedStack(index: route.index, children: pages),
           ),
         ],
       ),
@@ -217,6 +235,15 @@ class _WorkspaceDrawer extends StatelessWidget {
               selected: selectedRoute == _WorkspaceRoute.train,
               onTap: () => onSelect(_WorkspaceRoute.train),
             ),
+            if (agent.type == AgentType.leadQualification)
+              _DrawerItem(
+                destination: const _Destination(
+                  'Qualification',
+                  CupertinoIcons.person_crop_circle_badge_checkmark,
+                ),
+                selected: selectedRoute == _WorkspaceRoute.qualification,
+                onTap: () => onSelect(_WorkspaceRoute.qualification),
+              ),
             _DrawerItem(
               destination: const _Destination('Deploy', CupertinoIcons.rocket),
               selected: selectedRoute == _WorkspaceRoute.deploy,
@@ -1179,10 +1206,16 @@ class HomeScreen extends StatelessWidget {
           ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
     final realCalls = calls.where((call) => !call.isTest).toList();
     final resolved = realCalls.where((call) => call.resolved).length;
-    final showQualified = controller.data.agent.qualifyLeadsEnabled;
+    final agent = controller.data.agent;
+    final showQualified = agent.qualifyLeadsEnabled;
     final qualified = controller.data.contacts
         .where((contact) => contact.leadStatus == 'Qualified')
         .length;
+    final judged = realCalls.map((call) => call.lead).nonNulls.toList();
+    final showLeads =
+        showQualified && agent.type == AgentType.leadQualification;
+    int count(LeadOutcome outcome) =>
+        judged.where((lead) => lead.outcome == outcome).length;
     final number = formatPhone(controller.data.agent.phoneNumber);
     return RefreshIndicator(
       onRefresh: controller.refresh,
@@ -1200,13 +1233,21 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _MetricCard(
-                  icon: CupertinoIcons.checkmark_circle,
-                  value: realCalls.isEmpty
-                      ? '—'
-                      : '${(resolved / realCalls.length * 100).round()}%',
-                  label: 'Resolved',
-                ),
+                child: showLeads
+                    ? _MetricCard(
+                        icon: CupertinoIcons.person_crop_circle_badge_checkmark,
+                        value: judged.isEmpty
+                            ? '—'
+                            : '${(count(LeadOutcome.qualified) / judged.length * 100).round()}%',
+                        label: 'Qualified',
+                      )
+                    : _MetricCard(
+                        icon: CupertinoIcons.checkmark_circle,
+                        value: realCalls.isEmpty
+                            ? '—'
+                            : '${(resolved / realCalls.length * 100).round()}%',
+                        label: 'Resolved',
+                      ),
               ),
             ],
           ),
@@ -1221,6 +1262,20 @@ class HomeScreen extends StatelessWidget {
                     icon: CupertinoIcons.person_2,
                     label: 'Qualified leads',
                     value: '$qualified',
+                  ),
+                  const Divider(),
+                ],
+                if (showLeads) ...[
+                  _OverviewRow(
+                    icon: CupertinoIcons.arrow_turn_down_right,
+                    label: 'Leads to follow up',
+                    value: '${count(LeadOutcome.followUp)}',
+                  ),
+                  const Divider(),
+                  _OverviewRow(
+                    icon: CupertinoIcons.xmark_circle,
+                    label: 'Not a fit',
+                    value: '${count(LeadOutcome.notAFit)}',
                   ),
                   const Divider(),
                 ],
@@ -1429,12 +1484,15 @@ class _CallRow extends StatelessWidget {
                 ],
               ),
             ),
-            call.isTest
-                ? const HubPill(label: 'Test call')
-                : HubPill(
-                    label: call.resolved ? 'Resolved' : 'Unresolved',
-                    tone: call.resolved ? PillTone.success : PillTone.danger,
-                  ),
+            if (call.isTest)
+              const HubPill(label: 'Test call')
+            else if (call.lead case final lead?)
+              LeadOutcomePill(outcome: lead.outcome)
+            else
+              HubPill(
+                label: call.resolved ? 'Resolved' : 'Unresolved',
+                tone: call.resolved ? PillTone.success : PillTone.danger,
+              ),
             const SizedBox(width: 6),
             const Icon(CupertinoIcons.chevron_right, size: 16),
           ],

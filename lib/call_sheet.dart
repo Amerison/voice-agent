@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'models.dart';
+import 'qualification_screen.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -28,6 +29,10 @@ void showCallSheet(BuildContext context, CallRecord call) {
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
               children: [
                 _CallSummary(call: call),
+                if (call.lead case final lead?) ...[
+                  const SizedBox(height: 16),
+                  _QualificationCard(lead: lead),
+                ],
                 if (!call.isTest) ...[
                   const SizedBox(height: 16),
                   HubCard(
@@ -80,6 +85,34 @@ void showCallSheet(BuildContext context, CallRecord call) {
       ),
     ),
   );
+}
+
+class _QualificationCard extends StatelessWidget {
+  const _QualificationCard({required this.lead});
+
+  final LeadResult lead;
+
+  @override
+  Widget build(BuildContext context) {
+    return HubCard(
+      icon: CupertinoIcons.person_crop_circle_badge_checkmark,
+      title: 'Qualification',
+      trailing: LeadOutcomePill(outcome: lead.outcome),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (lead.reason.isNotEmpty)
+            Text(lead.reason, style: Theme.of(context).textTheme.bodyLarge),
+          for (final item in lead.answers) ...[
+            const SizedBox(height: 14),
+            Text(item.question, style: TextStyle(color: HubColors.textMuted)),
+            const SizedBox(height: 2),
+            Text(item.answer, style: const TextStyle(fontSize: 16)),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _CallSummary extends StatelessWidget {
