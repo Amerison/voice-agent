@@ -4,7 +4,7 @@ An iOS-first Flutter app for configuring a lead-qualification voice agent, provi
 
 ## What is implemented
 
-- Lead-qualification onboarding with future agent types shown as unavailable
+- Guided onboarding for an AI receptionist or AI lead qualification agent: identity, voice, business type, website, calendar, greeting, a live test call, and number choice
 - Identity, friendliness, persona, company, and greeting configuration
 - Exact webpage URLs, short answers, guidelines, and action controls
 - Vapi assistant sync and inbound number provisioning through a server-side API
@@ -57,9 +57,13 @@ flutter run
 
 The Conductor workspace exposes matching **server** and **ios** run scripts.
 
+## Phone number
+
+The Vapi account's number is the app's single source of truth. Free Vapi accounts get one inbound US number, so provisioning reuses that number and points it at this agent's assistant; it only buys a number when the account has none.
+
 ## Connect live Vapi webhooks
 
-Vapi must reach the API over public HTTPS. Set `PUBLIC_BASE_URL` to the deployed API URL or a development tunnel before syncing an assistant:
+Without `PUBLIC_BASE_URL`, the server still syncs the assistant and pulls finished calls from Vapi's API (pull to refresh on Home or Calls; listing calls costs no credits). The contact and booking tools need webhooks, so Vapi must reach the API over public HTTPS. Set `PUBLIC_BASE_URL` to the deployed API URL or a development tunnel to enable them:
 
 ```sh
 PUBLIC_BASE_URL=https://api.example.com

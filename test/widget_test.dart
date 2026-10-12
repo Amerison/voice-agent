@@ -44,48 +44,110 @@ Contact sampleContact() => Contact(
 );
 
 void main() {
-  testWidgets('starts with lead qualification onboarding', (tester) async {
+  void usePhoneSize(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1179, 2556);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+  }
+
+  // Onboarding's ambient glow never settles, so step time forward instead.
+  Future<void> settle(WidgetTester tester) async {
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+  }
+
+  testWidgets('starts with use-case selection and reveals a number', (
+    tester,
+  ) async {
+    usePhoneSize(tester);
     final controller = await readyController(onboard: false);
 
     await tester.pumpWidget(VoiceAgentApp(controller: controller));
-    await tester.pumpAndSettle();
+    await settle(tester);
 
-    expect(find.text('What should your\nagent do?'), findsOneWidget);
-    expect(find.text('Lead qualification'), findsOneWidget);
-    expect(find.text('Customer support'), findsOneWidget);
-    expect(find.text('STEP 1 OF 3'), findsOneWidget);
-    expect(find.text('Continue'), findsOneWidget);
-    expect(find.text('Build my agent'), findsNothing);
+    expect(find.text('AI receptionist'), findsOneWidget);
+    expect(find.text('AI lead qualification'), findsOneWidget);
+    expect(find.text('Reserved for your agent'), findsNothing);
+
+    await tester.tap(find.text('AI receptionist'));
+    await settle(tester);
+    expect(find.text('Reserved for your agent'), findsOneWidget);
   });
 
   testWidgets('walks through onboarding onto an empty workspace', (
     tester,
   ) async {
+    usePhoneSize(tester);
     final controller = await readyController(onboard: false);
 
     await tester.pumpWidget(VoiceAgentApp(controller: controller));
+    await settle(tester);
+
+    Future<void> tapText(String text) async {
+      await tester.tap(find.text(text).last);
+      await settle(tester);
+    }
+
+    await tapText('AI receptionist');
+    await tapText('Continue');
+    expect(find.text('Give me a name and a personality'), findsOneWidget);
+    expect(find.text('Luna'), findsOneWidget);
+    await tapText('Professional');
+    await tapText('Continue');
+
+    expect(find.text('How should I sound?'), findsOneWidget);
+    await tapText('Paige');
+    await tapText('Continue');
+
+    expect(find.text('What type of business do you have?'), findsOneWidget);
+    await tapText('On-site & home services');
+
+    expect(find.text('Link your website'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'acme-plumbing.com');
+    await tester.pump();
+    await tester.tap(find.text('Link website'));
+    await tester.pump();
+    expect(find.text('Website linked'), findsOneWidget);
+    await settle(tester);
+
+    expect(find.text('Connect Google Calendar'), findsOneWidget);
+    await tapText('Connect Google Calendar');
+    await settle(tester);
+
+    expect(find.text('What’s your company called?'), findsOneWidget);
+    expect(find.text('Acme Plumbing'), findsOneWidget);
+    await tapText('Continue');
+
+    expect(find.text('How should I greet callers?'), findsOneWidget);
+    const greeting =
+        'Hi, thanks for calling Acme Plumbing! This is Luna, the AI receptionist. I can answer questions, take a message, or book a visit. How can I help today?';
+    expect(find.text(greeting), findsOneWidget);
+    await tapText('Continue');
+
+    expect(find.text('Want to hear me in action?'), findsOneWidget);
+    await tapText('Skip');
+
+    expect(find.text('Which number should I answer calls on?'), findsOneWidget);
+    expect(find.text('What is call forwarding?'), findsOneWidget);
+    await tapText('Finish setup');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
-    expect(find.text('Tell us about\nyour company.'), findsOneWidget);
-    await tester.enterText(find.byType(TextField).first, 'Northstar');
-    await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Name the voice\ncallers will hear.'), findsOneWidget);
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Agent name'),
-      'Maya',
-    );
-    await tester.tap(find.text('Build my agent'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Test Maya'), findsOneWidget);
+    final agent = controller.data.agent;
+    expect(find.text('Test Luna'), findsOneWidget);
     expect(controller.data.onboardingComplete, isTrue);
+    expect(agent.type, AgentType.receptionist);
+    expect(agent.name, 'Luna');
+    expect(agent.friendliness, Friendliness.professional);
+    expect(agent.voice, 'Paige');
+    expect(agent.companyName, 'Acme Plumbing');
+    expect(agent.greeting, greeting);
+    expect(agent.calendarConnected, isTrue);
+    expect(agent.reservedNumber, matches(RegExp(r'^\(415\) 555-01\d\d$')));
+    expect(agent.phoneNumber, isNull);
+    expect(agent.knowledgeSources.single.content, 'https://acme-plumbing.com');
     expect(controller.data.contacts, isEmpty);
     expect(controller.data.calls, isEmpty);
-    expect(controller.data.agent.knowledgeSources, isEmpty);
 
     await tester.tap(find.text('CRM'));
     await tester.pumpAndSettle();

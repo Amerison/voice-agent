@@ -45,343 +45,6 @@ class LaunchScreen extends StatelessWidget {
   }
 }
 
-class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key, required this.controller});
-
-  final AppController controller;
-
-  @override
-  State<OnboardingScreen> createState() => _OnboardingScreenState();
-}
-
-class _OnboardingScreenState extends State<OnboardingScreen> {
-  var _step = 0;
-  var _type = AgentType.leadQualification;
-  var _friendliness = Friendliness.friendly;
-  late final TextEditingController _name;
-  late final TextEditingController _company;
-  late final TextEditingController _description;
-  late final TextEditingController _greeting;
-
-  @override
-  void initState() {
-    super.initState();
-    final agent = widget.controller.data.agent;
-    _type = agent.type;
-    _friendliness = agent.friendliness;
-    _name = TextEditingController(text: agent.name);
-    _company = TextEditingController(text: agent.companyName);
-    _description = TextEditingController(text: agent.companyDescription);
-    _greeting = TextEditingController(text: agent.greeting);
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _company.dispose();
-    _description.dispose();
-    _greeting.dispose();
-    super.dispose();
-  }
-
-  String get _headline => switch (_step) {
-    0 => 'What should your\nagent do?',
-    1 => 'Tell us about\nyour company.',
-    _ => 'Name the voice\ncallers will hear.',
-  };
-
-  String get _subtitle => switch (_step) {
-    0 =>
-      'Start with a proven playbook. You can shape the voice, knowledge, and behavior next.',
-    1 => 'This is who the agent represents. You can refine it later.',
-    _ => 'A name and greeting are enough to start testing.',
-  };
-
-  String get _suggestedGreeting {
-    final name = _name.text.trim().isEmpty ? 'your agent' : _name.text.trim();
-    final company = _company.text.trim().isEmpty
-        ? 'our team'
-        : _company.text.trim();
-    return 'Hi, you’ve reached $name at $company. How can I help today?';
-  }
-
-  Future<void> _next() async {
-    if (_step == 0) {
-      setState(() => _step = 1);
-      return;
-    }
-    if (_step == 1) {
-      if (_company.text.trim().isEmpty) {
-        showHubMessage(context, 'Company name is required.');
-        return;
-      }
-      if (_greeting.text.trim().isEmpty) {
-        _greeting.text = _suggestedGreeting;
-      }
-      setState(() => _step = 2);
-      return;
-    }
-    if (_name.text.trim().isEmpty) {
-      showHubMessage(context, 'Agent name is required.');
-      return;
-    }
-    var greeting = _greeting.text.trim();
-    if (greeting.isEmpty) greeting = _suggestedGreeting;
-    await widget.controller.completeOnboarding(
-      agent: widget.controller.data.agent.copyWith(
-        type: _type,
-        name: _name.text.trim(),
-        companyName: _company.text.trim(),
-        companyDescription: _description.text.trim(),
-        greeting: greeting,
-        friendliness: _friendliness,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 20, 0),
-              child: Row(
-                children: [
-                  if (_step > 0)
-                    IconButton(
-                      tooltip: 'Back',
-                      onPressed: () => setState(() => _step -= 1),
-                      icon: const Icon(CupertinoIcons.chevron_left),
-                    )
-                  else
-                    const SizedBox(width: 48),
-                  const Spacer(),
-                  Text('STEP ${_step + 1} OF 3', style: textTheme.labelSmall),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                children: [
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: BrandMark(),
-                  ),
-                  const SizedBox(height: 28),
-                  Text(
-                    formatLongDate(DateTime.now()),
-                    style: textTheme.labelSmall,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(_headline, style: textTheme.displaySmall),
-                  const SizedBox(height: 12),
-                  Text(
-                    _subtitle,
-                    style: textTheme.bodyLarge?.copyWith(
-                      color: HubColors.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  ..._stepBody(context),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: widget.controller.isBusy ? null : _next,
-                  icon: const Icon(CupertinoIcons.arrow_right, size: 20),
-                  label: Text(_step == 2 ? 'Build my agent' : 'Continue'),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _stepBody(BuildContext context) {
-    if (_step == 0) {
-      return [
-        _AgentTypeCard(
-          icon: CupertinoIcons.person_crop_circle_badge_checkmark,
-          title: AgentType.leadQualification.label,
-          description:
-              'Qualify inbound prospects and book the right next step.',
-          selected: _type == AgentType.leadQualification,
-          badge: 'Available',
-          onTap: () => setState(() => _type = AgentType.leadQualification),
-        ),
-        const SizedBox(height: 12),
-        _AgentTypeCard(
-          icon: CupertinoIcons.headphones,
-          title: AgentType.customerSupport.label,
-          description: 'Answer questions and resolve customer issues.',
-          badge: 'Next',
-          disabled: true,
-        ),
-        const SizedBox(height: 12),
-        _AgentTypeCard(
-          icon: CupertinoIcons.phone_arrow_up_right,
-          title: AgentType.outboundCalling.label,
-          description: 'Reach leads and customers proactively.',
-          badge: 'Coming soon',
-          disabled: true,
-        ),
-      ];
-    }
-    if (_step == 1) {
-      return [
-        TextField(
-          controller: _company,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(labelText: 'Company name'),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _description,
-          minLines: 3,
-          maxLines: 5,
-          decoration: const InputDecoration(
-            labelText: 'What does the company do?',
-            hintText: 'Optional — you can add this later.',
-          ),
-        ),
-      ];
-    }
-    return [
-      TextField(
-        controller: _name,
-        textCapitalization: TextCapitalization.words,
-        decoration: const InputDecoration(labelText: 'Agent name'),
-      ),
-      const SizedBox(height: 16),
-      Text('Friendliness', style: TextStyle(color: HubColors.textMuted)),
-      const SizedBox(height: 8),
-      SizedBox(
-        width: double.infinity,
-        child: SegmentedButton<Friendliness>(
-          showSelectedIcon: false,
-          segments: const [
-            ButtonSegment(
-              value: Friendliness.professional,
-              label: Text('Professional'),
-            ),
-            ButtonSegment(value: Friendliness.neutral, label: Text('Neutral')),
-            ButtonSegment(
-              value: Friendliness.friendly,
-              label: Text('Friendly'),
-            ),
-          ],
-          selected: {_friendliness},
-          onSelectionChanged: (value) =>
-              setState(() => _friendliness = value.first),
-        ),
-      ),
-      const SizedBox(height: 16),
-      TextField(
-        controller: _greeting,
-        minLines: 2,
-        maxLines: 4,
-        decoration: InputDecoration(
-          labelText: 'Greeting',
-          hintText: _suggestedGreeting,
-          helperText: 'The first line callers hear.',
-        ),
-      ),
-    ];
-  }
-}
-
-class _AgentTypeCard extends StatelessWidget {
-  const _AgentTypeCard({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.badge,
-    this.selected = false,
-    this.disabled = false,
-    this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-  final String badge;
-  final bool selected;
-  final bool disabled;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: disabled ? .5 : 1,
-      child: Material(
-        color: HubColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: selected ? HubColors.orange : HubColors.border,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: disabled ? null : onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                IconBadge(
-                  icon: icon,
-                  size: 44,
-                  color: selected ? HubColors.orange : HubColors.background,
-                  iconColor: selected ? Colors.white : HubColors.text,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              title,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                          HubPill(
-                            label: badge,
-                            tone: selected ? PillTone.accent : PillTone.neutral,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        description,
-                        style: TextStyle(color: HubColors.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _Destination {
   const _Destination(this.label, this.icon);
 
@@ -603,6 +266,11 @@ class _WorkspaceDrawer extends StatelessWidget {
       selected: controller.data.agent.type,
       options: [
         HubPickerOption(
+          value: AgentType.receptionist,
+          label: AgentType.receptionist.label,
+          subtitle: 'Answer calls, take messages, and book appointments',
+        ),
+        HubPickerOption(
           value: AgentType.leadQualification,
           label: AgentType.leadQualification.label,
           subtitle: 'Qualify inbound prospects and book meetings',
@@ -678,35 +346,23 @@ class _DrawerAccount extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const BrandMark(size: 42),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                [
-                  if (agent.name.trim().isNotEmpty) agent.name.trim(),
-                  if (agent.companyName.trim().isNotEmpty)
-                    agent.companyName.trim(),
-                ].join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              Text(
-                agent.phoneNumber ?? 'No phone number yet',
-                style: TextStyle(color: HubColors.textMuted),
-              ),
-            ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            agent.name.trim().isEmpty ? 'Your agent' : agent.name.trim(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
           ),
-        ),
-      ],
+          Text(
+            agent.phoneNumber ?? agent.reservedNumber ?? 'No phone number yet',
+            style: TextStyle(color: HubColors.textMuted),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1477,95 +1133,98 @@ class HomeScreen extends StatelessWidget {
     final qualified = controller.data.contacts
         .where((contact) => contact.leadStatus == 'Qualified')
         .length;
-    return HubPage(
-      key: const PageStorageKey('home'),
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _MetricCard(
-                icon: CupertinoIcons.phone,
-                value: '${calls.length}',
-                label: 'Calls',
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _MetricCard(
-                icon: CupertinoIcons.checkmark_circle,
-                value: calls.isEmpty
-                    ? '—'
-                    : '${(resolved / calls.length * 100).round()}%',
-                label: 'Resolved',
-              ),
-            ),
-          ],
-        ),
-        HubCard(
-          icon: CupertinoIcons.chart_bar,
-          title: 'Report',
-          detail: 'latest performance',
-          child: Column(
+    return RefreshIndicator(
+      onRefresh: controller.refresh,
+      child: HubPage(
+        key: const PageStorageKey('home'),
+        children: [
+          Row(
             children: [
-              _OverviewRow(
-                icon: CupertinoIcons.person_2,
-                label: 'Qualified leads',
-                value: '$qualified',
+              Expanded(
+                child: _MetricCard(
+                  icon: CupertinoIcons.phone,
+                  value: '${calls.length}',
+                  label: 'Calls',
+                ),
               ),
-              const Divider(),
-              _OverviewRow(
-                icon: CupertinoIcons.calendar,
-                label: 'Upcoming meetings',
-                value: '${meetings.length}',
-              ),
-              const Divider(),
-              _OverviewRow(
-                icon: CupertinoIcons.person_badge_plus,
-                label: 'CRM contacts',
-                value: '${controller.data.contacts.length}',
+              const SizedBox(width: 12),
+              Expanded(
+                child: _MetricCard(
+                  icon: CupertinoIcons.checkmark_circle,
+                  value: calls.isEmpty
+                      ? '—'
+                      : '${(resolved / calls.length * 100).round()}%',
+                  label: 'Resolved',
+                ),
               ),
             ],
           ),
-        ),
-        HubCard(
-          icon: CupertinoIcons.phone,
-          title: 'Incoming calls',
-          detail: 'recent activity',
-          child: calls.isEmpty
-              ? const HubEmptyState(
-                  icon: CupertinoIcons.phone,
-                  title: 'You have no calls',
-                  message: 'Calls will appear here after they end.',
-                )
-              : Column(
-                  children: [
-                    for (var i = 0; i < calls.take(3).length; i++) ...[
-                      if (i > 0) const Divider(),
-                      _CallRow(call: calls[i]),
-                    ],
-                  ],
+          HubCard(
+            icon: CupertinoIcons.chart_bar,
+            title: 'Report',
+            detail: 'latest performance',
+            child: Column(
+              children: [
+                _OverviewRow(
+                  icon: CupertinoIcons.person_2,
+                  label: 'Qualified leads',
+                  value: '$qualified',
                 ),
-        ),
-        HubCard(
-          icon: CupertinoIcons.calendar,
-          title: 'Meetings',
-          detail: 'coming up',
-          child: meetings.isEmpty
-              ? const HubEmptyState(
+                const Divider(),
+                _OverviewRow(
                   icon: CupertinoIcons.calendar,
-                  title: 'Nothing scheduled',
-                  message: 'Meetings booked by the agent will appear here.',
-                )
-              : Column(
-                  children: [
-                    for (var i = 0; i < meetings.take(3).length; i++) ...[
-                      if (i > 0) const Divider(),
-                      _MeetingRow(meeting: meetings[i]),
-                    ],
-                  ],
+                  label: 'Upcoming meetings',
+                  value: '${meetings.length}',
                 ),
-        ),
-      ],
+                const Divider(),
+                _OverviewRow(
+                  icon: CupertinoIcons.person_badge_plus,
+                  label: 'CRM contacts',
+                  value: '${controller.data.contacts.length}',
+                ),
+              ],
+            ),
+          ),
+          HubCard(
+            icon: CupertinoIcons.phone,
+            title: 'Incoming calls',
+            detail: 'recent activity',
+            child: calls.isEmpty
+                ? const HubEmptyState(
+                    icon: CupertinoIcons.phone,
+                    title: 'You have no calls',
+                    message: 'Calls will appear here after they end.',
+                  )
+                : Column(
+                    children: [
+                      for (var i = 0; i < calls.take(3).length; i++) ...[
+                        if (i > 0) const Divider(),
+                        _CallRow(call: calls[i]),
+                      ],
+                    ],
+                  ),
+          ),
+          HubCard(
+            icon: CupertinoIcons.calendar,
+            title: 'Meetings',
+            detail: 'coming up',
+            child: meetings.isEmpty
+                ? const HubEmptyState(
+                    icon: CupertinoIcons.calendar,
+                    title: 'Nothing scheduled',
+                    message: 'Meetings booked by the agent will appear here.',
+                  )
+                : Column(
+                    children: [
+                      for (var i = 0; i < meetings.take(3).length; i++) ...[
+                        if (i > 0) const Divider(),
+                        _MeetingRow(meeting: meetings[i]),
+                      ],
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1579,29 +1238,32 @@ class CallsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final calls = [...controller.data.calls]
       ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-    return HubPage(
-      headline: 'Review every conversation and its outcome.',
-      children: [
-        HubCard(
-          icon: CupertinoIcons.phone,
-          title: 'Call history',
-          detail: '${calls.length} total',
-          child: calls.isEmpty
-              ? const HubEmptyState(
-                  icon: CupertinoIcons.phone,
-                  title: 'You have no calls',
-                  message: 'Calls will appear here after they end.',
-                )
-              : Column(
-                  children: [
-                    for (var i = 0; i < calls.length; i++) ...[
-                      if (i > 0) const Divider(),
-                      _CallRow(call: calls[i]),
+    return RefreshIndicator(
+      onRefresh: controller.refresh,
+      child: HubPage(
+        headline: 'Review every conversation and its outcome.',
+        children: [
+          HubCard(
+            icon: CupertinoIcons.phone,
+            title: 'Call history',
+            detail: '${calls.length} total',
+            child: calls.isEmpty
+                ? const HubEmptyState(
+                    icon: CupertinoIcons.phone,
+                    title: 'You have no calls',
+                    message: 'Calls will appear here after they end.',
+                  )
+                : Column(
+                    children: [
+                      for (var i = 0; i < calls.length; i++) ...[
+                        if (i > 0) const Divider(),
+                        _CallRow(call: calls[i]),
+                      ],
                     ],
-                  ],
-                ),
-        ),
-      ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }

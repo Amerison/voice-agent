@@ -899,6 +899,14 @@ class _TextPromptDialogState extends State<_TextPromptDialog> {
   }
 }
 
+/// Formats US E.164 numbers like +17743218191 as (774) 321-8191.
+String? formatPhone(String? number) {
+  if (number == null) return null;
+  final match = RegExp(r'^\+1(\d{3})(\d{3})(\d{4})$').firstMatch(number);
+  if (match == null) return number;
+  return '(${match[1]}) ${match[2]}-${match[3]}';
+}
+
 void showHubMessage(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 }

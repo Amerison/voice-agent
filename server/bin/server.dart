@@ -52,6 +52,8 @@ class ApiServer {
       ..put('/v1/workspace', _putWorkspace)
       ..post('/v1/agent/sync', _syncAgent)
       ..post('/v1/agent/provision-number', _provisionNumber)
+      ..get('/v1/vapi/number', _accountNumber)
+      ..post('/v1/calls/refresh', _refreshCalls)
       ..post('/v1/vapi/webhook/<routeId>', _vapiWebhook)
       ..options('/<ignored|.*>', (_) => Response.ok(''));
   }
@@ -94,12 +96,6 @@ class ApiServer {
 
   Future<Response> _syncAgent(Request request) async {
     try {
-      if (publicBaseUrl.isEmpty) {
-        throw const ApiException(
-          503,
-          'PUBLIC_BASE_URL is required before syncing a live Vapi agent.',
-        );
-      }
       final key = _workspaceKey(request);
       final body = await _readObject(request);
       final workspace = _object(body['workspace']);
@@ -108,7 +104,11 @@ class ApiServer {
       final integration = store.ensureIntegration(key, agent['id'] as String);
       final routeId = integration['routeId'] as String;
       final secret = integration['secret'] as String;
-      final webhookUrl = '$publicBaseUrl/v1/vapi/webhook/$routeId';
+      // Without a public URL, Vapi can't reach our webhooks: the assistant
+      // still syncs, tools are skipped, and calls arrive via /v1/calls/refresh.
+      final webhookUrl = publicBaseUrl.isEmpty
+          ? null
+          : '$publicBaseUrl/v1/vapi/webhook/$routeId';
       final webpages = await _fetchWebpages(agent);
 
       var assistantId = agent['vapiAssistantId'] as String?;
@@ -177,10 +177,15 @@ class ApiServer {
       if (agent['phoneNumber'] != null) {
         return _json(200, {'workspace': workspace});
       }
-      final phone = await vapi.provisionNumber(
-        assistantId: assistantId,
-        areaCode: areaCode,
-      );
+      // The account's Vapi number is the single source of truth: reuse it and
+      // point it at this assistant; only buy one if the account has none.
+      final existing = await vapi.listNumbers();
+      final phone = existing.isNotEmpty
+          ? await vapi.assignNumber(existing.first['id'] as String, assistantId)
+          : await vapi.provisionNumber(
+              assistantId: assistantId,
+              areaCode: areaCode,
+            );
       agent
         ..['phoneNumber'] = phone['number'] as String?
         ..['vapiPhoneNumberId'] = phone['id'] as String?;
@@ -375,6 +380,104 @@ class ApiServer {
     }
   }
 
+  Future<Response> _accountNumber(Request request) async {
+    try {
+      _workspaceKey(request);
+      final numbers = await vapi.listNumbers();
+      if (numbers.isEmpty) return _json(200, {'number': null});
+      final number = numbers.first;
+      return _json(200, {'number': number['number'], 'id': number['id']});
+    } on ApiException catch (error) {
+      return _json(error.statusCode, {'error': error.message});
+    } on VapiException catch (error) {
+      return _json(502, {'error': 'Vapi: ${error.message}'});
+    }
+  }
+
+  /// Pulls ended calls for this agent's assistant from Vapi so they show up
+  /// even when webhooks can't reach this server.
+  Future<Response> _refreshCalls(Request request) async {
+    try {
+      final key = _workspaceKey(request);
+      final workspace = store.workspace(key);
+      if (workspace == null) {
+        return _json(404, {'error': 'Workspace not found.'});
+      }
+      final agent = _object(workspace['agent']);
+      final assistantId = agent['vapiAssistantId'] as String?;
+      if (assistantId == null || assistantId.isEmpty) {
+        return _json(200, {'workspace': workspace});
+      }
+      final integration = store.ensureIntegration(key, agent['id'] as String);
+      final routeId = integration['routeId'] as String;
+      final records = (workspace['calls'] as List? ?? <dynamic>[]);
+      final known = records
+          .cast<Map<String, dynamic>>()
+          .map((item) => item['id'])
+          .toSet();
+      final calls = await vapi.listCalls(assistantId);
+      final fresh = calls
+          .where((call) => call['status'] == 'ended')
+          .where((call) => !known.contains(call['id']))
+          .map(
+            (call) => _callRecord(
+              call,
+              store.actionsForCall(routeId, call['id'] as String),
+            ),
+          )
+          .toList();
+      if (fresh.isNotEmpty) {
+        records
+          ..addAll(fresh)
+          ..sort(
+            (a, b) =>
+                (b['startedAt'] as String).compareTo(a['startedAt'] as String),
+          );
+        workspace['calls'] = records;
+        await store.saveWorkspace(key, workspace);
+      }
+      return _json(200, {'workspace': workspace});
+    } on ApiException catch (error) {
+      return _json(error.statusCode, {'error': error.message});
+    } on VapiException catch (error) {
+      return _json(502, {'error': 'Vapi: ${error.message}'});
+    }
+  }
+
+  Map<String, dynamic> _callRecord(
+    Map<String, dynamic> call,
+    List<String> actions,
+  ) {
+    final artifact = _objectOrEmpty(call['artifact']);
+    final transcriptText =
+        artifact['transcript']?.toString() ??
+        call['transcript']?.toString() ??
+        '';
+    final transcript = _transcript({
+      'messages': artifact['messages'] ?? call['messages'],
+    }, transcriptText);
+    final resolution = _resolution(artifact, transcriptText, actions);
+    final startedAt = _date(call['startedAt']) ?? DateTime.now().toUtc();
+    final endedAt = _date(call['endedAt']) ?? startedAt;
+    final customer = _objectOrEmpty(call['customer']);
+    return {
+      'id': call['id'],
+      'startedAt': startedAt.toIso8601String(),
+      'durationSeconds': endedAt
+          .difference(startedAt)
+          .inSeconds
+          .clamp(0, 43200),
+      'callerNumber':
+          customer['number'] as String? ??
+          (call['type'] == 'webCall' ? 'Web test call' : 'Unknown caller'),
+      'resolved': resolution.$1,
+      'resolutionReason': resolution.$2,
+      'transcript': transcript,
+      'actions': actions,
+      'endedReason': call['endedReason'] as String? ?? 'unknown',
+    };
+  }
+
   Future<void> _handleEndOfCall(
     String routeId,
     Map<String, dynamic> integration,
@@ -392,47 +495,37 @@ class ApiServer {
     )) {
       return;
     }
-    final artifact = _objectOrEmpty(message['artifact'] ?? call['artifact']);
-    final transcriptText =
-        artifact['transcript']?.toString() ??
-        message['transcript']?.toString() ??
-        '';
-    final transcript = _transcript(artifact, transcriptText);
-    final actions = store.actionsForCall(routeId, callId);
-    final resolution = _resolution(artifact, transcriptText, actions);
-    final startedAt =
-        _date(message['startedAt'] ?? call['startedAt']) ??
-        DateTime.now().toUtc();
-    final endedAt = _date(message['endedAt'] ?? call['endedAt']) ?? startedAt;
-    final customer = _objectOrEmpty(call['customer'] ?? message['customer']);
-    records.insert(0, {
-      'id': callId,
-      'startedAt': startedAt.toIso8601String(),
-      'durationSeconds': endedAt
-          .difference(startedAt)
-          .inSeconds
-          .clamp(0, 43200),
-      'callerNumber': customer['number'] as String? ?? 'Unknown caller',
-      'resolved': resolution.$1,
-      'resolutionReason': resolution.$2,
-      'transcript': transcript,
-      'actions': actions,
-      'endedReason':
-          message['endedReason'] as String? ??
-          call['endedReason'] as String? ??
-          'unknown',
-    });
+    records.insert(
+      0,
+      _callRecord({
+        ...call,
+        'id': callId,
+        'artifact': message['artifact'] ?? call['artifact'],
+        'transcript': message['transcript'] ?? call['transcript'],
+        'startedAt': message['startedAt'] ?? call['startedAt'],
+        'endedAt': message['endedAt'] ?? call['endedAt'],
+        'customer': call['customer'] ?? message['customer'],
+        'endedReason': message['endedReason'] ?? call['endedReason'],
+      }, store.actionsForCall(routeId, callId)),
+    );
     workspace['calls'] = records;
     await store.saveWorkspace(workspaceKey, workspace);
   }
 
   Map<String, dynamic> _assistantPayload(
     Map<String, dynamic> agent, {
-    required String webhookUrl,
+    required String? webhookUrl,
     required String webhookSecret,
     required List<String> webpageContents,
     String? structuredOutputId,
   }) {
+    if (webhookUrl == null) {
+      agent = {
+        ...agent,
+        'createContactEnabled': false,
+        'bookMeetingEnabled': false,
+      };
+    }
     final tools = <Map<String, dynamic>>[];
     if (agent['createContactEnabled'] == true) {
       tools.add(
@@ -440,7 +533,7 @@ class ApiServer {
           name: 'create_contact',
           description:
               'Create or update a CRM contact after confirming their details aloud.',
-          webhookUrl: webhookUrl,
+          webhookUrl: webhookUrl!,
           webhookSecret: webhookSecret,
           properties: {
             'name': {'type': 'string'},
@@ -466,7 +559,7 @@ class ApiServer {
             name: 'get_meeting_slots',
             description:
                 'Get available meeting times before offering times to the caller.',
-            webhookUrl: webhookUrl,
+            webhookUrl: webhookUrl!,
             webhookSecret: webhookSecret,
             properties: const {},
             required: const [],
@@ -496,6 +589,7 @@ class ApiServer {
     return {
       'name': agent['name'],
       'firstMessage': agent['greeting'],
+      'voice': {'provider': 'vapi', 'voiceId': agent['voice'] ?? 'Elliot'},
       'model': {
         'provider': 'openai',
         'model': 'gpt-4o-mini',
@@ -510,12 +604,14 @@ class ApiServer {
         ],
         'tools': tools,
       },
-      'server': {
-        'url': webhookUrl,
-        'headers': {'X-Webhook-Secret': webhookSecret},
-        'timeoutSeconds': 20,
+      if (webhookUrl != null) ...{
+        'server': {
+          'url': webhookUrl,
+          'headers': {'X-Webhook-Secret': webhookSecret},
+          'timeoutSeconds': 20,
+        },
+        'serverMessages': ['end-of-call-report', 'tool-calls'],
       },
-      'serverMessages': ['end-of-call-report', 'tool-calls'],
       'artifactPlan': {
         'recordingEnabled': false,
         'loggingEnabled': true,
@@ -697,11 +793,11 @@ class ApiServer {
       return messages
           .whereType<Map<String, dynamic>>()
           .where((item) {
-            return item['role'] == 'assistant' || item['role'] == 'user';
+            return const {'assistant', 'bot', 'user'}.contains(item['role']);
           })
           .map((item) {
             return {
-              'role': item['role'] == 'assistant' ? 'assistant' : 'caller',
+              'role': item['role'] == 'user' ? 'caller' : 'assistant',
               'text':
                   item['message']?.toString() ??
                   item['content']?.toString() ??

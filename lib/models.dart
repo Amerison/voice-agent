@@ -5,17 +5,19 @@ enum KnowledgeKind { webpage, shortAnswer }
 enum SyncStatus { draft, syncing, ready, failed }
 
 enum AgentType {
+  receptionist,
   leadQualification,
   customerSupport,
   outboundCalling;
 
   String get label => switch (this) {
-    leadQualification => 'Lead qualification',
+    receptionist => 'AI receptionist',
+    leadQualification => 'AI lead qualification',
     customerSupport => 'Customer support',
     outboundCalling => 'Outbound calling',
   };
 
-  bool get isAvailable => this == leadQualification;
+  bool get isAvailable => this == receptionist || this == leadQualification;
 }
 
 class KnowledgeSource {
@@ -66,6 +68,9 @@ class AgentConfig {
     required this.bookMeetingEnabled,
     required this.createContactEnabled,
     required this.syncStatus,
+    this.voice = 'Elliot',
+    this.calendarConnected = false,
+    this.reservedNumber,
     this.phoneNumber,
     this.vapiAssistantId,
     this.vapiPhoneNumberId,
@@ -87,6 +92,13 @@ class AgentConfig {
   final bool bookMeetingEnabled;
   final bool createContactEnabled;
   final SyncStatus syncStatus;
+
+  /// Vapi built-in voice id.
+  final String voice;
+  final bool calendarConnected;
+
+  /// Mock number shown during onboarding until a real one is provisioned.
+  final String? reservedNumber;
   final String? phoneNumber;
   final String? vapiAssistantId;
   final String? vapiPhoneNumberId;
@@ -107,6 +119,9 @@ class AgentConfig {
     bool? bookMeetingEnabled,
     bool? createContactEnabled,
     SyncStatus? syncStatus,
+    String? voice,
+    bool? calendarConnected,
+    String? reservedNumber,
     String? phoneNumber,
     String? vapiAssistantId,
     String? vapiPhoneNumberId,
@@ -128,6 +143,9 @@ class AgentConfig {
     bookMeetingEnabled: bookMeetingEnabled ?? this.bookMeetingEnabled,
     createContactEnabled: createContactEnabled ?? this.createContactEnabled,
     syncStatus: syncStatus ?? this.syncStatus,
+    voice: voice ?? this.voice,
+    calendarConnected: calendarConnected ?? this.calendarConnected,
+    reservedNumber: reservedNumber ?? this.reservedNumber,
     phoneNumber: phoneNumber ?? this.phoneNumber,
     vapiAssistantId: vapiAssistantId ?? this.vapiAssistantId,
     vapiPhoneNumberId: vapiPhoneNumberId ?? this.vapiPhoneNumberId,
@@ -151,6 +169,9 @@ class AgentConfig {
     'bookMeetingEnabled': bookMeetingEnabled,
     'createContactEnabled': createContactEnabled,
     'syncStatus': syncStatus.name,
+    'voice': voice,
+    'calendarConnected': calendarConnected,
+    'reservedNumber': reservedNumber,
     'phoneNumber': phoneNumber,
     'vapiAssistantId': vapiAssistantId,
     'vapiPhoneNumberId': vapiPhoneNumberId,
@@ -179,6 +200,9 @@ class AgentConfig {
     syncStatus: SyncStatus.values.byName(
       json['syncStatus'] as String? ?? 'draft',
     ),
+    voice: json['voice'] as String? ?? 'Elliot',
+    calendarConnected: json['calendarConnected'] as bool? ?? false,
+    reservedNumber: json['reservedNumber'] as String?,
     phoneNumber: json['phoneNumber'] as String?,
     vapiAssistantId: json['vapiAssistantId'] as String?,
     vapiPhoneNumberId: json['vapiPhoneNumberId'] as String?,

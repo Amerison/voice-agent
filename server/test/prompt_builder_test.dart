@@ -31,4 +31,16 @@ void main() {
       contains('If asked whether you are a bot, say yes plainly.'),
     );
   });
+
+  test('uses receptionist behavior for receptionist agents', () {
+    final prompt = buildLeadQualificationPrompt({
+      'type': 'receptionist',
+      'name': 'Luna',
+      'persona': 'the AI receptionist',
+      'companyName': 'Acme',
+    });
+
+    expect(prompt, contains('RECEPTIONIST BEHAVIOR'));
+    expect(prompt, isNot(contains('LEAD QUALIFICATION BEHAVIOR')));
+  });
 }
