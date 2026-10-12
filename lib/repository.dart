@@ -1,12 +1,21 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 
-const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
+const _apiBaseUrlDefine = String.fromEnvironment('API_BASE_URL');
+
+/// Empty means demo mode. Release builds go to TestFlight and the App Store,
+/// where a plain-HTTP development server on a home network is unreachable, so
+/// they only accept an HTTPS server.
+final apiBaseUrl =
+    kReleaseMode && !_apiBaseUrlDefine.trim().startsWith('https://')
+    ? ''
+    : _apiBaseUrlDefine;
 
 abstract class WorkspaceRepository {
   bool get isDemo;

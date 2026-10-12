@@ -3,8 +3,13 @@
 # them, so launches from Xcode, an IDE Run button, or plain `flutter run` match
 # tool/run.sh. Values passed with --dart-define win. Only these two keys are
 # read so VAPI_PRIVATE_KEY and the Twilio credentials never reach the app.
+# API_BASE_URL is only added to Debug builds: Release and Profile builds are
+# what Archive uploads to TestFlight, and they run in demo mode unless a
+# public HTTPS server is passed with --dart-define.
 
 _env_file="$SRCROOT/../.env"
+_names="VAPI_PUBLIC_KEY"
+[ "$CONFIGURATION" = "Debug" ] && _names="$_names API_BASE_URL"
 
 _has_define() {
   _saved_ifs=$IFS
@@ -19,7 +24,7 @@ _has_define() {
 }
 
 if [ -f "$_env_file" ]; then
-  for _name in VAPI_PUBLIC_KEY API_BASE_URL; do
+  for _name in $_names; do
     _has_define "$_name" && continue
     _value=$(sed -nE "s/^[[:space:]]*(export[[:space:]]+)?$_name=//p" "$_env_file" |
       tail -n 1 | sed -E "s/^[\"']//; s/[\"'][[:space:]]*$//; s/[[:space:]]*$//")

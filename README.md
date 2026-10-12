@@ -65,8 +65,10 @@ tool/run.sh -d <device-id>
 iOS builds started any other way (Xcode Run or Archive, an IDE Run button, or
 plain `flutter run`) fill in those same two values from `.env` through
 `tool/xcode_dart_defines.sh`, which the Xcode build phase loads. Values passed
-with `--dart-define` take priority. To build demo mode, comment out
-`API_BASE_URL` in `.env`.
+with `--dart-define` take priority. `API_BASE_URL` is only read from `.env` for
+Debug builds, so Release builds (including Xcode Archive and TestFlight) run in
+demo mode. Release builds also ignore any `API_BASE_URL` that isn't `https://`,
+so a home-network address can't ship to testers.
 
 `VAPI_PUBLIC_KEY` is Vapi's client-safe public key and powers the in-app voice
 test. Allow the synced assistant and enable transient assistants on that key so
@@ -113,7 +115,7 @@ flutter test
 ## TestFlight checklist
 
 1. Deploy the server to a persistent HTTPS host and set `VAPI_PRIVATE_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `PUBLIC_BASE_URL`, and `DATA_FILE`.
-2. Build Flutter with the production API URL: `--dart-define=API_BASE_URL=https://api.example.com`.
+2. Archive as-is for a demo-mode build, or pass the production API URL to go live: `flutter build ipa --dart-define=API_BASE_URL=https://api.example.com`.
 3. Confirm the iOS bundle ID and App Store Connect app record.
 4. Archive and upload the build from Xcode.
 5. Add internal testers and complete a resolved and unresolved call walkthrough.
