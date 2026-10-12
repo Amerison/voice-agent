@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -71,13 +72,13 @@ enum _Business {
   final String bookingPhrase;
 }
 
-/// Vapi built-in voices. ponytail: no audio samples yet; add previews when
-/// voice assets exist.
+/// Active Vapi voices. Previews are Vapi's published samples
+/// (github.com/VapiAI/docs, MIT), bundled in assets/voices/ by lowercase id.
 const _voices = [
   (id: 'Elliot', tone: 'Calm, professional'),
-  (id: 'Paige', tone: 'Clear, reassuring'),
-  (id: 'Kylie', tone: 'Bright, upbeat'),
-  (id: 'Cole', tone: 'Deep, relaxed'),
+  (id: 'Clara', tone: 'Clear, professional'),
+  (id: 'Savannah', tone: 'Bright, friendly'),
+  (id: 'Kai', tone: 'Relaxed, helpful'),
 ];
 
 class OnboardingScreen extends StatefulWidget {
@@ -93,20 +94,25 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     with SingleTickerProviderStateMixin {
   static const _defaultName = 'Luna';
 
-  // Demo mode shows a fictional 555-01xx number; live mode swaps in the
-  // Vapi account's number in initState.
-  var _number = '(415) 555-01${10 + math.Random().nextInt(90)}';
+  // San Francisco's overlay code; Twilio has no 415 numbers left.
+  var _areaCode = '628';
 
-  late final AnimationController _ambient = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 8),
-  )..repeat();
+  // Demo mode's fictional 555-01xx number.
+  var _demoNumber = '+162855501${10 + math.Random().nextInt(90)}';
+
+  /// A real number Twilio has free in [_areaCode]; Finish buys it if it's
+  /// still available, or another in the same area code.
+  String? _available;
+
+  late final AnimationController _ambient;
 
   var _step = _Step.useCase;
   var _forward = true;
   AgentType? _type;
   var _friendliness = Friendliness.friendly;
   var _voice = _voices.first.id;
+  AudioPlayer? _preview;
+  String? _playing;
   _Business? _business;
   late final TextEditingController _name;
   late final TextEditingController _company;
@@ -122,6 +128,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   @override
   void initState() {
     super.initState();
+    _ambient = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat();
     final agent = widget.controller.data.agent;
     _name = TextEditingController(
       text: agent.name.trim().isEmpty ? _defaultName : agent.name,
@@ -132,16 +142,48 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     for (final field in [_name, _company, _website, _greeting]) {
       field.addListener(_refresh);
     }
-    widget.controller.accountNumber().then((number) {
-      if (number != null && mounted) {
-        setState(() => _number = formatPhone(number)!);
-      }
+    _lookUpNumber();
+  }
+
+  String get _number => formatPhone(
+    widget.controller.isDemo
+        ? _demoNumber
+        : _available ?? '($_areaCode) number',
+  )!;
+
+  Future<void> _lookUpNumber() async {
+    final areaCode = _areaCode;
+    final number = await widget.controller.availableNumber(areaCode);
+    if (mounted && areaCode == _areaCode) setState(() => _available = number);
+  }
+
+  Future<void> _changeAreaCode() async {
+    final value = await showTextPrompt(
+      context,
+      title: 'Choose area code',
+      label: 'US area code',
+      hint: _areaCode,
+      keyboardType: TextInputType.number,
+      maxLength: 3,
+    );
+    if (value == null || !mounted) return;
+    final areaCode = value.trim();
+    if (!RegExp(r'^\d{3}$').hasMatch(areaCode)) {
+      showHubMessage(context, 'Enter a three-digit US area code.');
+      return;
+    }
+    setState(() {
+      _areaCode = areaCode;
+      _available = null;
+      _demoNumber = '+1$areaCode${_demoNumber.substring(5)}';
     });
+    await _lookUpNumber();
   }
 
   @override
   void dispose() {
     _ambient.dispose();
+    _preview?.dispose();
     for (final field in [_name, _company, _website, _greeting]) {
       field.dispose();
     }
@@ -179,7 +221,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           : '${_business!.label} business (${_business!.examples}).',
       greeting: greeting.isEmpty ? _suggestedGreeting : greeting,
       calendarConnected: _calendarConnected,
-      reservedNumber: _number,
+      reservedNumber: widget.controller.isDemo ? _demoNumber : _available,
     );
   }
 
@@ -187,7 +229,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     final index = _step.index + delta;
     if (index < 0 || index >= _Step.values.length) return;
     FocusManager.instance.primaryFocus?.unfocus();
+    if (_playing != null) _preview?.stop().ignore();
     setState(() {
+      _playing = null;
       _forward = delta > 0;
       _step = _Step.values[index];
       if (_step == _Step.greeting && !_greetingEdited) {
@@ -197,6 +241,28 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   void _next() => _go(1);
+
+  /// Selects [id] and plays its sample; tapping the playing voice stops it.
+  Future<void> _togglePreview(String id) async {
+    final start = _playing != id;
+    setState(() {
+      _voice = id;
+      _playing = start ? id : null;
+    });
+    try {
+      final player = _preview ??= AudioPlayer()
+        ..onPlayerComplete.listen((_) {
+          if (mounted) setState(() => _playing = null);
+        });
+      await player.stop();
+      if (start) {
+        await player.play(AssetSource('voices/${id.toLowerCase()}.m4a'));
+      }
+    } catch (error) {
+      debugPrint('Voice preview failed: $error');
+      if (mounted && _playing == id) setState(() => _playing = null);
+    }
+  }
 
   void _advanceFrom(_Step step, Duration delay) {
     Future.delayed(delay, () {
@@ -269,21 +335,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       await controller.addWebpage(site);
     }
     // ponytail: forwarding/porting an existing line is deferred to Deploy.
-    await controller.completeOnboarding(agent: _draft);
-    if (!_useExistingNumber && !controller.isDemo) {
-      // Attaches the account's Vapi number to this agent (no call credits).
-      await controller.syncAgent();
-      final digits = _number.replaceAll(RegExp(r'\D'), '');
-      final areaCode = digits.length >= 10
-          ? digits.substring(digits.length - 10, digits.length - 7)
-          : '415';
-      if (controller.data.agent.syncStatus == SyncStatus.ready) {
-        try {
-          await controller.provisionNumber(areaCode);
-        } on WorkspaceException catch (error) {
-          if (mounted) showHubMessage(context, error.message);
-        }
-      }
+    // Either way the agent needs its own number: forwarded calls go to it.
+    final draft = _draft;
+    await controller.completeOnboarding(agent: draft);
+    if (controller.data.agent.phoneNumber != null) return;
+    try {
+      await controller.provisionNumber(_areaCode, number: draft.reservedNumber);
+    } on WorkspaceException {
+      // Already in controller.error; Deploy offers a retry.
     }
   }
 
@@ -387,7 +446,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   Widget _body() {
     return switch (_step) {
       _Step.useCase => _page(
-        hero: const BrandMark(size: 56),
+        hero: const BrandMark(size: 120),
         title: 'Hi, I’m your new AI agent',
         subtitle:
             'I answer calls 24/7 so you never miss one. What should I focus on?',
@@ -454,18 +513,19 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       ),
       _Step.voice => _page(
         title: 'How should I sound?',
-        subtitle: 'Pick a voice to start. You can switch it later.',
+        subtitle: 'Tap a voice to hear it. You can switch it later.',
         children: [
           for (final voice in _voices)
             _OptionTile(
               leading: _VoiceGlyph(
                 animation: _ambient,
-                active: voice.id == _voice,
+                selected: voice.id == _voice,
+                playing: voice.id == _playing,
               ),
               title: voice.id,
               subtitle: voice.tone,
               selected: voice.id == _voice,
-              onTap: () => setState(() => _voice = voice.id),
+              onTap: () => _togglePreview(voice.id),
             ),
         ],
       ),
@@ -633,18 +693,25 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 260),
             child: _useExistingNumber
-                ? const _InfoCard(
-                    key: ValueKey('forward'),
+                ? _InfoCard(
+                    key: const ValueKey('forward'),
                     title: 'What is call forwarding?',
                     body:
-                        'A standard carrier feature that sends calls you don’t pick up to me. Callers never notice. We’ll set it up together when you go live.',
+                        'A standard carrier feature that sends calls you don’t pick up to me at $_number. Callers never notice. We’ll set it up together when you go live.',
                   )
                 : _InfoCard(
                     key: const ValueKey('new'),
-                    title: 'Your number is reserved',
+                    title: 'Your new number',
                     body:
-                        '$_number is held for you and goes live when you deploy. You can port your own number later.',
+                        '$_number becomes yours when you finish setup, and I answer it right away. You can port your own number later.',
                   ),
+          ),
+          Center(
+            child: TextButton.icon(
+              onPressed: _changeAreaCode,
+              icon: const Icon(CupertinoIcons.location, size: 16),
+              label: const Text('Change area code'),
+            ),
           ),
         ],
       ),
@@ -661,10 +728,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
-        if (hero != null)
-          _Hero(animation: _ambient, child: hero)
-        else
-          const SizedBox(height: 36),
+        if (hero != null) _Hero(child: hero) else const SizedBox(height: 36),
         _Rise(
           order: 1,
           child: Text(
@@ -822,20 +886,25 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// Soft drifting glow behind the hero mark.
-class _Hero extends StatelessWidget {
-  const _Hero({required this.animation, required this.child});
+/// Soft glow behind the hero mark that wanders at random.
+class _Hero extends StatefulWidget {
+  const _Hero({required this.child});
 
-  final Animation<double> animation;
   final Widget child;
 
+  @override
+  State<_Hero> createState() => _HeroState();
+}
+
+class _HeroState extends State<_Hero>
+    with SingleTickerProviderStateMixin, DriftClock {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     const blobs = [
-      (color: HubColors.magenta, phase: 0.0, size: 170.0),
-      (color: HubColors.orange, phase: 2.1, size: 150.0),
-      (color: Color(0xFFF3D3B8), phase: 4.2, size: 120.0),
+      (color: HubColors.magenta, seed: 11, size: 140.0),
+      (color: HubColors.orange, seed: 29, size: 120.0),
+      (color: Color(0xFFF3D3B8), seed: 47, size: 100.0),
     ];
     return SizedBox(
       height: 210,
@@ -846,25 +915,28 @@ class _Hero extends StatelessWidget {
             child: RepaintBoundary(
               child: ImageFiltered(
                 imageFilter: ImageFilter.blur(sigmaX: 38, sigmaY: 38),
-                child: AnimatedBuilder(
-                  animation: animation,
-                  builder: (context, _) {
-                    final t = animation.value * 2 * math.pi;
+                child: ValueListenableBuilder<double>(
+                  valueListenable: clock,
+                  builder: (context, t, _) {
                     return Stack(
                       children: [
                         for (final blob in blobs)
                           Align(
                             alignment: Alignment(
-                              math.cos(t + blob.phase) * .32,
-                              math.sin(t + blob.phase) * .3 - .05,
+                              drift(t * .09, blob.seed) * .28,
+                              drift(t * .09, blob.seed + 5) * .22 - .05,
                             ),
                             child: Container(
-                              width: blob.size,
-                              height: blob.size,
+                              width:
+                                  blob.size *
+                                  (1 + .12 * drift(t * .1, blob.seed + 9)),
+                              height:
+                                  blob.size *
+                                  (1 + .12 * drift(t * .1, blob.seed + 9)),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: blob.color.withValues(
-                                  alpha: dark ? .5 : .32,
+                                  alpha: dark ? .28 : .18,
                                 ),
                               ),
                             ),
@@ -876,7 +948,7 @@ class _Hero extends StatelessWidget {
               ),
             ),
           ),
-          _Rise(order: 0, child: child),
+          _Rise(order: 0, child: widget.child),
         ],
       ),
     );
@@ -1147,10 +1219,15 @@ class _Check extends StatelessWidget {
 }
 
 class _VoiceGlyph extends StatelessWidget {
-  const _VoiceGlyph({required this.animation, required this.active});
+  const _VoiceGlyph({
+    required this.animation,
+    required this.selected,
+    required this.playing,
+  });
 
   final Animation<double> animation;
-  final bool active;
+  final bool selected;
+  final bool playing;
 
   @override
   Widget build(BuildContext context) {
@@ -1158,7 +1235,7 @@ class _VoiceGlyph extends StatelessWidget {
       width: 38,
       height: 38,
       decoration: BoxDecoration(
-        color: active ? HubColors.orange : HubColors.background,
+        color: selected ? HubColors.orange : HubColors.background,
         borderRadius: BorderRadius.circular(11),
       ),
       child: AnimatedBuilder(
@@ -1170,7 +1247,7 @@ class _VoiceGlyph extends StatelessWidget {
               AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
                 width: 3,
-                height: active
+                height: playing
                     ? 7 +
                           (math.sin(
                                     animation.value * math.pi * 24 + bar * 1.3,
@@ -1180,7 +1257,7 @@ class _VoiceGlyph extends StatelessWidget {
                     : const [8.0, 14.0, 10.0, 6.0][bar],
                 margin: const EdgeInsets.symmetric(horizontal: 1.5),
                 decoration: BoxDecoration(
-                  color: active ? Colors.white : HubColors.textMuted,
+                  color: selected ? Colors.white : HubColors.textMuted,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1357,7 +1434,7 @@ class _NumberCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'Reserved for your agent',
+                      'Your agent’s new number',
                       style: TextStyle(
                         color: HubColors.background.withValues(alpha: .6),
                         fontSize: 13,

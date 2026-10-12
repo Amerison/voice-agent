@@ -68,11 +68,11 @@ void main() {
 
     expect(find.text('AI receptionist'), findsOneWidget);
     expect(find.text('AI lead qualification'), findsOneWidget);
-    expect(find.text('Reserved for your agent'), findsNothing);
+    expect(find.text('Your agent’s new number'), findsNothing);
 
     await tester.tap(find.text('AI receptionist'));
     await settle(tester);
-    expect(find.text('Reserved for your agent'), findsOneWidget);
+    expect(find.text('Your agent’s new number'), findsOneWidget);
   });
 
   testWidgets('walks through onboarding onto an empty workspace', (
@@ -97,7 +97,7 @@ void main() {
     await tapText('Continue');
 
     expect(find.text('How should I sound?'), findsOneWidget);
-    await tapText('Paige');
+    await tapText('Clara');
     await tapText('Continue');
 
     expect(find.text('What type of business do you have?'), findsOneWidget);
@@ -139,12 +139,12 @@ void main() {
     expect(agent.type, AgentType.receptionist);
     expect(agent.name, 'Luna');
     expect(agent.friendliness, Friendliness.professional);
-    expect(agent.voice, 'Paige');
+    expect(agent.voice, 'Clara');
     expect(agent.companyName, 'Acme Plumbing');
     expect(agent.greeting, greeting);
     expect(agent.calendarConnected, isTrue);
-    expect(agent.reservedNumber, matches(RegExp(r'^\(415\) 555-01\d\d$')));
-    expect(agent.phoneNumber, isNull);
+    expect(agent.reservedNumber, matches(RegExp(r'^\+162855501\d\d$')));
+    expect(agent.phoneNumber, agent.reservedNumber);
     expect(agent.knowledgeSources.single.content, 'https://acme-plumbing.com');
     expect(controller.data.contacts, isEmpty);
     expect(controller.data.calls, isEmpty);
@@ -349,5 +349,32 @@ void main() {
       controller.data.agent.knowledgeSources.map((source) => source.content),
       contains('https://example.com'),
     );
+  });
+
+  test('syncs agent changes automatically', () async {
+    final controller = await readyController();
+    await controller.syncAgent();
+    expect(controller.data.agent.syncStatus, SyncStatus.ready);
+
+    await controller.updateAgent(
+      controller.data.agent.copyWith(guidelines: 'Always confirm the address.'),
+    );
+    await controller.syncAgent();
+
+    expect(controller.data.agent.syncStatus, SyncStatus.ready);
+    expect(controller.data.agent.guidelines, 'Always confirm the address.');
+  });
+
+  test('keeps edits made while a sync is running', () async {
+    final controller = await readyController();
+    final firstSync = controller.syncAgent();
+    await controller.updateAgent(
+      controller.data.agent.copyWith(guidelines: 'Never quote prices.'),
+    );
+    await firstSync;
+    await controller.syncAgent();
+
+    expect(controller.data.agent.guidelines, 'Never quote prices.');
+    expect(controller.data.agent.syncStatus, SyncStatus.ready);
   });
 }

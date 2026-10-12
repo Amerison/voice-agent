@@ -43,15 +43,22 @@ class VapiClient {
     'assistantIds': [assistantId],
   });
 
-  /// Buys a Vapi number. Free accounts get exactly one, so prefer
-  /// [listNumbers] and [assignNumber] when the account already has it.
-  Future<Map<String, dynamic>> provisionNumber({
+  /// Hands a Twilio number to Vapi, which points the number's voice webhook at
+  /// [assistantId]. The number's messaging settings are left alone.
+  Future<Map<String, dynamic>> importTwilioNumber({
+    required String number,
+    required String twilioAccountSid,
+    required String twilioAuthToken,
     required String assistantId,
-    required String areaCode,
+    required String name,
   }) async => await _request('POST', '/phone-number', {
-    'provider': 'vapi',
+    'provider': 'twilio',
+    'number': number,
+    'twilioAccountSid': twilioAccountSid,
+    'twilioAuthToken': twilioAuthToken,
     'assistantId': assistantId,
-    'numberDesiredAreaCode': areaCode,
+    'name': name,
+    'smsEnabled': false,
   });
 
   Future<List<Map<String, dynamic>>> listNumbers() async =>

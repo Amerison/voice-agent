@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' show ClientException;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +14,7 @@ class AppController extends ChangeNotifier {
 
   final WorkspaceRepository repository;
   WorkspaceData? _data;
+  Future<void>? _syncing;
   bool _busy = false;
   bool _darkMode = true;
   String? _error;
@@ -28,12 +31,14 @@ class AppController extends ChangeNotifier {
     _darkMode = preferences.getBool(_darkModeKey) ?? true;
     await _run(() async => _data = await repository.load());
     if (!isDemo && isReady && data.onboardingComplete) await refresh();
+    if (isReady && data.onboardingComplete) unawaited(syncAgent());
   }
 
-  /// Null in demo mode or when the server can't reach Vapi.
-  Future<String?> accountNumber() async {
+  /// A real number onboarding can show before it's bought. Null in demo mode
+  /// or when the server can't reach Twilio.
+  Future<String?> availableNumber(String areaCode) async {
     try {
-      return await repository.accountNumber();
+      return await repository.availableNumber(areaCode);
     } on Object {
       return null;
     }
@@ -51,12 +56,14 @@ class AppController extends ChangeNotifier {
     _data = data.copyWith(onboardingComplete: true, agent: agent ?? data.agent);
     notifyListeners();
     await _persist();
+    unawaited(syncAgent());
   }
 
   Future<void> updateAgent(AgentConfig agent) async {
     _data = data.copyWith(agent: agent.copyWith(syncStatus: SyncStatus.draft));
     notifyListeners();
     await _persist();
+    if (data.onboardingComplete) unawaited(syncAgent());
   }
 
   Future<void> addWebpage(String url) async {
@@ -107,16 +114,52 @@ class AppController extends ChangeNotifier {
     );
   }
 
+  /// Pushes the agent to Vapi. Runs on its own after every agent change;
+  /// callers only await it when they need the synced assistant. Overlapping
+  /// requests queue behind the running sync instead of racing it.
   Future<void> syncAgent() async {
-    _data = data.copyWith(
+    while (_syncing != null) {
+      await _syncing;
+    }
+    if (!isReady || data.agent.syncStatus == SyncStatus.ready) return;
+    final sync = _sync();
+    _syncing = sync;
+    try {
+      await sync;
+    } finally {
+      _syncing = null;
+    }
+  }
+
+  Future<void> _sync() async {
+    final sent = data.copyWith(
       agent: data.agent.copyWith(syncStatus: SyncStatus.syncing),
     );
+    _data = sent;
     notifyListeners();
-    await _run(() async => _data = await repository.syncAgent(data));
-    if (_error != null) {
+    try {
+      final synced = (await repository.syncAgent(sent)).agent;
+      final changedMeanwhile = !identical(_data, sent);
+      // Edits made while syncing stay local and trigger the next sync.
+      final edited = data.agent.syncStatus != SyncStatus.syncing;
       _data = data.copyWith(
         agent: data.agent.copyWith(
-          syncStatus: SyncStatus.failed,
+          vapiAssistantId: synced.vapiAssistantId,
+          vapiStructuredOutputId: synced.vapiStructuredOutputId,
+          lastSyncedAt: synced.lastSyncedAt,
+          syncStatus: edited ? SyncStatus.draft : SyncStatus.ready,
+          clearSyncError: true,
+        ),
+      );
+      notifyListeners();
+      if (changedMeanwhile) await _persist();
+    } on Object catch (exception) {
+      _error = _message(exception);
+      _data = data.copyWith(
+        agent: data.agent.copyWith(
+          syncStatus: data.agent.syncStatus == SyncStatus.syncing
+              ? SyncStatus.failed
+              : null,
           syncError: _error,
         ),
       );
@@ -124,16 +167,33 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> provisionNumber(String areaCode) async {
+  /// Gets the agent its own number in [areaCode], trying [number] first when
+  /// onboarding showed one. Failures land in [error].
+  Future<void> provisionNumber(String areaCode, {String? number}) async {
     if (!RegExp(r'^\d{3}$').hasMatch(areaCode)) {
       throw const WorkspaceException('Enter a three-digit US area code.');
     }
+    await syncAgent();
     if (data.agent.syncStatus != SyncStatus.ready) {
-      throw const WorkspaceException('Sync the agent before getting a number.');
+      throw WorkspaceException(
+        data.agent.syncError ?? 'The agent couldn’t be set up. Try again.',
+      );
     }
-    await _run(
-      () async => _data = await repository.provisionNumber(data, areaCode),
-    );
+    await _run(() async {
+      final provisioned = (await repository.provisionNumber(
+        data,
+        areaCode,
+        number: number,
+      )).agent;
+      // Merge so edits made while the number was being bought survive.
+      _data = data.copyWith(
+        agent: data.agent.copyWith(
+          phoneNumber: provisioned.phoneNumber,
+          vapiPhoneNumberId: provisioned.vapiPhoneNumberId,
+        ),
+      );
+      await _persist();
+    });
   }
 
   Future<void> refresh() async {

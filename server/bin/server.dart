@@ -1,12 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:http/http.dart' as http;
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
+import 'package:voice_agent_server/inbox.dart';
 import 'package:voice_agent_server/prompt_builder.dart';
 import 'package:voice_agent_server/store.dart';
+import 'package:voice_agent_server/twilio_client.dart';
 import 'package:voice_agent_server/vapi_client.dart';
 
 Future<void> main() async {
@@ -24,12 +27,32 @@ Future<void> main() async {
       '';
   final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 8080;
   final dataPath = Platform.environment['DATA_FILE'] ?? '.data/store.json';
+  final twilioSid = Platform.environment['TWILIO_ACCOUNT_SID']?.trim() ?? '';
+  final twilioToken = Platform.environment['TWILIO_AUTH_TOKEN']?.trim() ?? '';
+  final twilio = twilioSid.isEmpty || twilioToken.isEmpty
+      ? null
+      : TwilioClient(accountSid: twilioSid, authToken: twilioToken);
+  if (twilio == null) {
+    stderr.writeln(
+      'TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN is missing, so phone numbers '
+      'can’t be provisioned.',
+    );
+  }
+  final existingNumber =
+      Platform.environment['TWILIO_PHONE_NUMBER']?.trim() ?? '';
+  if (existingNumber.isNotEmpty && !_isUsNumber(existingNumber)) {
+    stderr.writeln('TWILIO_PHONE_NUMBER must look like +14155550123.');
+    exitCode = 64;
+    return;
+  }
 
   final store = FileStore(dataPath);
   await store.initialize();
   final api = ApiServer(
     store: store,
     vapi: VapiClient(privateKey: privateKey),
+    twilio: twilio,
+    existingNumber: existingNumber,
     publicBaseUrl: publicBaseUrl,
   );
   final handler = const Pipeline()
@@ -40,19 +63,23 @@ Future<void> main() async {
   stdout.writeln('Voice Agent API listening on port ${server.port}');
 }
 
+/// Holds the Vapi and Twilio secrets for the app. Workspaces live on the
+/// device: each request carries the workspace and the response returns it
+/// updated, without the server keeping a copy.
 class ApiServer {
   ApiServer({
     required this.store,
     required this.vapi,
     required this.publicBaseUrl,
+    this.twilio,
+    this.existingNumber = '',
   }) {
     router
       ..get('/health', _health)
-      ..get('/v1/workspace', _getWorkspace)
-      ..put('/v1/workspace', _putWorkspace)
+      ..get('/v1/workspace', _legacyWorkspace)
       ..post('/v1/agent/sync', _syncAgent)
+      ..get('/v1/numbers/available', _availableNumber)
       ..post('/v1/agent/provision-number', _provisionNumber)
-      ..get('/v1/vapi/number', _accountNumber)
       ..post('/v1/calls/refresh', _refreshCalls)
       ..post('/v1/vapi/webhook/<routeId>', _vapiWebhook)
       ..options('/<ignored|.*>', (_) => Response.ok(''));
@@ -60,34 +87,30 @@ class ApiServer {
 
   final FileStore store;
   final VapiClient vapi;
+  final TwilioClient? twilio;
+
+  /// A Twilio number to share instead of buying one per workspace, for trial
+  /// accounts, which can hold only one number. Empty to buy numbers.
+  final String existingNumber;
   final String publicBaseUrl;
   final Router router = Router();
 
   Response _health(Request request) => _json(200, {
     'ok': true,
     'vapiConfigured': true,
+    'twilioConfigured': twilio != null,
     'publicUrlConfigured': publicBaseUrl.isNotEmpty,
   });
 
-  Future<Response> _getWorkspace(Request request) async {
+  /// Returns a workspace saved before data moved onto the device, so the app
+  /// can import it once.
+  Future<Response> _legacyWorkspace(Request request) async {
     try {
       final key = _workspaceKey(request);
       final workspace = store.workspace(key);
       if (workspace == null) {
         return _json(404, {'error': 'Workspace not found.'});
       }
-      return _json(200, {'workspace': workspace});
-    } on ApiException catch (error) {
-      return _json(error.statusCode, {'error': error.message});
-    }
-  }
-
-  Future<Response> _putWorkspace(Request request) async {
-    try {
-      final key = _workspaceKey(request);
-      final workspace = await _readObject(request);
-      _validateWorkspace(workspace);
-      await store.saveWorkspace(key, workspace);
       return _json(200, {'workspace': workspace});
     } on ApiException catch (error) {
       return _json(error.statusCode, {'error': error.message});
@@ -101,7 +124,10 @@ class ApiServer {
       final workspace = _object(body['workspace']);
       _validateWorkspace(workspace);
       final agent = _object(workspace['agent']);
-      final integration = store.ensureIntegration(key, agent['id'] as String);
+      final integration = await store.ensureIntegration(
+        key,
+        agent['id'] as String,
+      );
       final routeId = integration['routeId'] as String;
       final secret = integration['secret'] as String;
       // Without a public URL, Vapi can't reach our webhooks: the assistant
@@ -144,7 +170,6 @@ class ApiServer {
         ..['syncError'] = null
         ..['lastSyncedAt'] = DateTime.now().toUtc().toIso8601String();
       workspace['agent'] = agent;
-      await store.saveWorkspace(key, workspace);
       return _json(200, {'workspace': workspace});
     } on ApiException catch (error) {
       return _json(error.statusCode, {'error': error.message});
@@ -156,16 +181,45 @@ class ApiServer {
     }
   }
 
+  /// A number onboarding can show before it's bought. Not held: provisioning
+  /// buys it if it's still free, or another in the same area code.
+  Future<Response> _availableNumber(Request request) async {
+    try {
+      _workspaceKey(request);
+      final areaCode = _areaCode(request.url.queryParameters['areaCode']);
+      final twilio = this.twilio;
+      if (existingNumber.isNotEmpty || twilio == null) {
+        return _json(200, {
+          'number': existingNumber.isEmpty ? null : existingNumber,
+        });
+      }
+      return _json(200, {'number': await _findNumber(twilio, areaCode)});
+    } on ApiException catch (error) {
+      return _json(error.statusCode, {'error': error.message});
+    } on TwilioException catch (error) {
+      return _json(502, {'error': 'Twilio: ${error.message}'});
+    }
+  }
+
+  /// Buys a Twilio number for this workspace and imports it into Vapi for the
+  /// agent's assistant. Safe to retry: a bought number is recorded before the
+  /// import, so a failed import never leads to buying a second one.
   Future<Response> _provisionNumber(Request request) async {
     try {
       final key = _workspaceKey(request);
       final body = await _readObject(request);
       final workspace = _object(body['workspace']);
       _validateWorkspace(workspace);
-      final areaCode = body['areaCode'] as String? ?? '';
-      if (!RegExp(r'^\d{3}$').hasMatch(areaCode)) {
-        throw const ApiException(400, 'Enter a three-digit US area code.');
+      final twilio = this.twilio;
+      if (twilio == null) {
+        throw const ApiException(
+          503,
+          'Twilio isn’t connected. Add TWILIO_ACCOUNT_SID and '
+          'TWILIO_AUTH_TOKEN to .env, then restart the server.',
+        );
       }
+      final areaCode = _areaCode(body['areaCode']);
+      final preferred = body['number'] as String?;
       final agent = _object(workspace['agent']);
       final assistantId = agent['vapiAssistantId'] as String?;
       if (assistantId == null || assistantId.isEmpty) {
@@ -174,26 +228,47 @@ class ApiServer {
           'Sync the agent before provisioning a number.',
         );
       }
-      if (agent['phoneNumber'] != null) {
+      if (agent['phoneNumber'] != null && agent['vapiPhoneNumberId'] != null) {
         return _json(200, {'workspace': workspace});
       }
-      // The account's Vapi number is the single source of truth: reuse it and
-      // point it at this assistant; only buy one if the account has none.
-      final existing = await vapi.listNumbers();
-      final phone = existing.isNotEmpty
-          ? await vapi.assignNumber(existing.first['id'] as String, assistantId)
-          : await vapi.provisionNumber(
+      final label = _numberLabel(agent);
+      final record = store.number(key) ?? <String, dynamic>{};
+      if (record['number'] == null) {
+        if (existingNumber.isNotEmpty) {
+          record['number'] = existingNumber;
+        } else {
+          final bought = await _buyNumber(twilio, preferred, areaCode, label);
+          record
+            ..['number'] = bought['phone_number']
+            ..['twilioSid'] = bought['sid'];
+        }
+        await store.saveNumber(key, record);
+      }
+      final number = record['number'] as String;
+      // Reassign instead of importing twice when Vapi already has the number.
+      final imported = (await vapi.listNumbers()).where(
+        (item) => item['number'] == number,
+      );
+      final phone = imported.isNotEmpty
+          ? await vapi.assignNumber(imported.first['id'] as String, assistantId)
+          : await vapi.importTwilioNumber(
+              number: number,
+              twilioAccountSid: twilio.accountSid,
+              twilioAuthToken: twilio.authToken,
               assistantId: assistantId,
-              areaCode: areaCode,
+              name: label,
             );
+      record['vapiPhoneNumberId'] = phone['id'];
+      await store.saveNumber(key, record);
       agent
-        ..['phoneNumber'] = phone['number'] as String?
+        ..['phoneNumber'] = number
         ..['vapiPhoneNumberId'] = phone['id'] as String?;
       workspace['agent'] = agent;
-      await store.saveWorkspace(key, workspace);
       return _json(200, {'workspace': workspace});
     } on ApiException catch (error) {
       return _json(error.statusCode, {'error': error.message});
+    } on TwilioException catch (error) {
+      return _json(502, {'error': 'Twilio: ${error.message}'});
     } on VapiException catch (error) {
       return _json(502, {'error': 'Vapi: ${error.message}'});
     } on Object catch (error, stack) {
@@ -216,10 +291,10 @@ class ApiServer {
       final message = _object(payload['message']);
       final type = message['type'] as String? ?? '';
       if (type == 'tool-calls' || type == 'function-call') {
-        return await _handleTools(routeId, integration, message);
+        return await _handleTools(routeId, message);
       }
       if (type == 'end-of-call-report') {
-        await _handleEndOfCall(routeId, integration, message);
+        await _handleEndOfCall(routeId, message);
       }
       return _json(200, {'received': true});
     } on ApiException catch (error) {
@@ -232,12 +307,8 @@ class ApiServer {
 
   Future<Response> _handleTools(
     String routeId,
-    Map<String, dynamic> integration,
     Map<String, dynamic> message,
   ) async {
-    final workspaceKey = integration['workspaceKey'] as String;
-    final workspace = store.workspace(workspaceKey);
-    if (workspace == null) return _toolError(message, 'Workspace not found.');
     final call = _objectOrEmpty(message['call']);
     final callId = call['id'] as String? ?? 'unknown-call';
     final calls = (message['toolCallList'] as List? ?? const [])
@@ -249,67 +320,51 @@ class ApiServer {
         final function = _object(toolCall['function']);
         final name = function['name'] as String? ?? '';
         final arguments = _arguments(function['arguments']);
-        final result = await _executeTool(
-          routeId,
-          callId,
-          workspace,
-          name,
-          arguments,
-        );
+        final result = await _executeTool(routeId, callId, name, arguments);
         results.add({'toolCallId': id, 'result': jsonEncode(result)});
       } on Object catch (error) {
         results.add({'toolCallId': id, 'error': error.toString()});
       }
     }
-    await store.saveWorkspace(workspaceKey, workspace);
     return _json(200, {'results': results});
   }
 
+  /// Tools queue what they create; the app merges it into its CRM on the next
+  /// refresh, where repeat callers are matched to existing contacts.
   Future<Map<String, dynamic>> _executeTool(
     String routeId,
     String callId,
-    Map<String, dynamic> workspace,
     String name,
     Map<String, dynamic> arguments,
   ) async {
-    final contacts = (workspace['contacts'] as List? ?? <dynamic>[]);
-    final meetings = (workspace['meetings'] as List? ?? <dynamic>[]);
+    String? optional(String key) {
+      final value = arguments[key]?.toString().trim() ?? '';
+      return value.isEmpty ? null : value;
+    }
+
     switch (name) {
       case 'create_contact':
         final contactName = _requiredString(arguments, 'name');
-        final email = arguments['email'] as String? ?? '';
-        final phone = arguments['phone'] as String? ?? '';
-        if (email.isEmpty && phone.isEmpty) {
+        final email = optional('email');
+        final phone = optional('phone');
+        if (email == null && phone == null) {
           throw const ApiException(400, 'Email or phone is required.');
         }
-        final existingIndex = contacts.indexWhere((item) {
-          final contact = item as Map<String, dynamic>;
-          return (email.isNotEmpty && contact['email'] == email) ||
-              (phone.isNotEmpty && contact['phone'] == phone);
-        });
+        // Unset fields are left out so they never overwrite what the app has.
         final contact = <String, dynamic>{
-          'id': existingIndex == -1
-              ? 'contact-${DateTime.now().microsecondsSinceEpoch}'
-              : (contacts[existingIndex] as Map<String, dynamic>)['id'],
+          'id': 'contact-${DateTime.now().microsecondsSinceEpoch}',
           'name': contactName,
-          'phone': phone,
-          'email': email,
-          'company': arguments['company'] as String? ?? '',
-          'jobTitle': arguments['jobTitle'] as String? ?? '',
+          'phone': ?phone,
+          'email': ?email,
+          'company': ?optional('company'),
+          'jobTitle': ?optional('jobTitle'),
           'leadSource': 'Inbound call',
-          'leadStatus': arguments['leadStatus'] as String? ?? 'New',
-          'budgetRange': arguments['budgetRange'] as String? ?? 'Not shared',
-          'notes': arguments['notes'] as String? ?? '',
-          'createdAt': existingIndex == -1
-              ? DateTime.now().toUtc().toIso8601String()
-              : (contacts[existingIndex] as Map<String, dynamic>)['createdAt'],
+          'leadStatus': ?optional('leadStatus'),
+          'budgetRange': ?optional('budgetRange'),
+          'notes': ?optional('notes'),
+          'createdAt': DateTime.now().toUtc().toIso8601String(),
         };
-        if (existingIndex == -1) {
-          contacts.insert(0, contact);
-        } else {
-          contacts[existingIndex] = contact;
-        }
-        workspace['contacts'] = contacts;
+        await store.addPending(routeId, 'contact', contact);
         await store.recordAction(routeId, callId, 'Created contact');
         return {
           'success': true,
@@ -326,49 +381,42 @@ class ApiServer {
         if (startsAt == null) {
           throw const ApiException(400, 'Invalid meeting time.');
         }
-        var contactId = arguments['contactId'] as String?;
-        if (contactId == null || contactId.isEmpty) {
-          final match = contacts.cast<Map<String, dynamic>>().where(
-            (item) =>
-                item['name'].toString().toLowerCase() ==
-                contactName.toLowerCase(),
-          );
-          contactId = match.isEmpty
-              ? 'contact-${DateTime.now().microsecondsSinceEpoch}'
-              : match.first['id'] as String;
-          if (match.isEmpty) {
-            contacts.insert(0, {
+        var contactId = optional('contactId');
+        if (contactId == null) {
+          // Only contacts from calls are visible here; the app matches this
+          // one to its CRM by email, phone, or name when it merges.
+          final match = store
+              .pending(routeId)
+              .where((item) => item['type'] == 'contact')
+              .map((item) => item['record'] as Map<String, dynamic>)
+              .where(
+                (contact) =>
+                    contact['name'].toString().toLowerCase() ==
+                    contactName.toLowerCase(),
+              );
+          if (match.isNotEmpty) {
+            contactId = match.last['id'] as String;
+          } else {
+            contactId = 'contact-${DateTime.now().microsecondsSinceEpoch}';
+            await store.addPending(routeId, 'contact', {
               'id': contactId,
               'name': contactName,
-              'phone': arguments['phone'] as String? ?? '',
-              'email': arguments['email'] as String? ?? '',
-              'company': '',
-              'jobTitle': '',
+              'phone': ?optional('phone'),
+              'email': ?optional('email'),
               'leadSource': 'Inbound call',
               'leadStatus': 'Qualified',
-              'budgetRange': 'Not shared',
               'notes': 'Created while booking a meeting.',
               'createdAt': DateTime.now().toUtc().toIso8601String(),
             });
           }
         }
-        final duplicate = meetings.cast<Map<String, dynamic>>().any(
-          (item) =>
-              item['contactId'] == contactId &&
-              item['startsAt'] == startsAt.toUtc().toIso8601String(),
-        );
-        if (!duplicate) {
-          meetings.insert(0, {
-            'id': 'meeting-${DateTime.now().microsecondsSinceEpoch}',
-            'contactId': contactId,
-            'contactName': contactName,
-            'startsAt': startsAt.toUtc().toIso8601String(),
-            'status': 'Scheduled',
-          });
-        }
-        workspace
-          ..['contacts'] = contacts
-          ..['meetings'] = meetings;
+        await store.addPending(routeId, 'meeting', {
+          'id': 'meeting-${DateTime.now().microsecondsSinceEpoch}',
+          'contactId': contactId,
+          'contactName': contactName,
+          'startsAt': startsAt.toUtc().toIso8601String(),
+          'status': 'Scheduled',
+        });
         await store.recordAction(routeId, callId, 'Booked meeting');
         return {
           'success': true,
@@ -380,36 +428,36 @@ class ApiServer {
     }
   }
 
-  Future<Response> _accountNumber(Request request) async {
-    try {
-      _workspaceKey(request);
-      final numbers = await vapi.listNumbers();
-      if (numbers.isEmpty) return _json(200, {'number': null});
-      final number = numbers.first;
-      return _json(200, {'number': number['number'], 'id': number['id']});
-    } on ApiException catch (error) {
-      return _json(error.statusCode, {'error': error.message});
-    } on VapiException catch (error) {
-      return _json(502, {'error': 'Vapi: ${error.message}'});
-    }
-  }
-
-  /// Pulls ended calls for this agent's assistant from Vapi so they show up
-  /// even when webhooks can't reach this server.
+  /// Merges what happened on calls into the workspace the app sent: records
+  /// queued by webhooks, then ended calls pulled from Vapi so they show up even
+  /// when webhooks can't reach this server.
+  ///
+  /// The app sends back the `inboxCursor` from the last response once it has
+  /// saved it, which clears those queued records here.
   Future<Response> _refreshCalls(Request request) async {
     try {
       final key = _workspaceKey(request);
-      final workspace = store.workspace(key);
-      if (workspace == null) {
-        return _json(404, {'error': 'Workspace not found.'});
-      }
+      final body = await _readObject(request);
+      final workspace = _object(body['workspace']);
+      _validateWorkspace(workspace);
+      final cursor = (body['inboxCursor'] as num?)?.toInt() ?? 0;
       final agent = _object(workspace['agent']);
       final assistantId = agent['vapiAssistantId'] as String?;
       if (assistantId == null || assistantId.isEmpty) {
-        return _json(200, {'workspace': workspace});
+        return _json(200, {'workspace': workspace, 'inboxCursor': cursor});
       }
-      final integration = store.ensureIntegration(key, agent['id'] as String);
+      final integration = await store.ensureIntegration(
+        key,
+        agent['id'] as String,
+      );
       final routeId = integration['routeId'] as String;
+      await store.acknowledge(routeId, cursor);
+      final pending = store.pending(routeId);
+      applyPending(workspace, pending);
+      final nextCursor = pending.fold(
+        cursor,
+        (latest, item) => math.max(latest, item['seq'] as int),
+      );
       final records = (workspace['calls'] as List? ?? <dynamic>[]);
       final known = records
           .cast<Map<String, dynamic>>()
@@ -434,9 +482,8 @@ class ApiServer {
                 (b['startedAt'] as String).compareTo(a['startedAt'] as String),
           );
         workspace['calls'] = records;
-        await store.saveWorkspace(key, workspace);
       }
-      return _json(200, {'workspace': workspace});
+      return _json(200, {'workspace': workspace, 'inboxCursor': nextCursor});
     } on ApiException catch (error) {
       return _json(error.statusCode, {'error': error.message});
     } on VapiException catch (error) {
@@ -480,23 +527,14 @@ class ApiServer {
 
   Future<void> _handleEndOfCall(
     String routeId,
-    Map<String, dynamic> integration,
     Map<String, dynamic> message,
   ) async {
-    final workspaceKey = integration['workspaceKey'] as String;
-    final workspace = store.workspace(workspaceKey);
-    if (workspace == null) return;
     final call = _objectOrEmpty(message['call']);
     final callId = call['id'] as String? ?? message['callId'] as String?;
     if (callId == null) return;
-    final records = (workspace['calls'] as List? ?? <dynamic>[]);
-    if (records.cast<Map<String, dynamic>>().any(
-      (item) => item['id'] == callId,
-    )) {
-      return;
-    }
-    records.insert(
-      0,
+    await store.addPending(
+      routeId,
+      'call',
       _callRecord({
         ...call,
         'id': callId,
@@ -508,8 +546,58 @@ class ApiServer {
         'endedReason': message['endedReason'] ?? call['endedReason'],
       }, store.actionsForCall(routeId, callId)),
     );
-    workspace['calls'] = records;
-    await store.saveWorkspace(workspaceKey, workspace);
+  }
+
+  Future<Map<String, dynamic>> _buyNumber(
+    TwilioClient twilio,
+    String? preferred,
+    String areaCode,
+    String label,
+  ) async {
+    if (preferred != null && _isUsNumber(preferred)) {
+      try {
+        return await twilio.buyNumber(preferred, friendlyName: label);
+      } on TwilioException catch (error) {
+        // Usually taken since onboarding showed it; pick another below.
+        stderr.writeln('Couldn’t buy $preferred: ${error.message}');
+      }
+    }
+    final available = await _findNumber(twilio, areaCode);
+    if (available == null) {
+      throw const ApiException(
+        409,
+        'Twilio has no US numbers available right now. Try again later.',
+      );
+    }
+    return twilio.buyNumber(available, friendlyName: label);
+  }
+
+  /// Prefers [areaCode], then any US local number, so a sold-out area code
+  /// never blocks onboarding.
+  Future<String?> _findNumber(TwilioClient twilio, String areaCode) async =>
+      await twilio.availableLocalNumber(areaCode) ??
+      await twilio.availableLocalNumber();
+
+  /// Names the number in the Twilio Console and Vapi dashboard.
+  String _numberLabel(Map<String, dynamic> agent) {
+    final company = (agent['companyName'] as String? ?? '').trim();
+    final name = (agent['name'] as String? ?? '').trim();
+    final label = [name, company].where((part) => part.isNotEmpty).join(' – ');
+    final text = label.isEmpty ? 'Customer Agent' : label;
+    return text.length <= 40 ? text : text.substring(0, 40);
+  }
+
+  /// Vapi retired these voices; agents saved with them get the closest
+  /// active voice offered in onboarding.
+  static const _retiredVoices = {
+    'Paige': 'Clara',
+    'Kylie': 'Savannah',
+    'Cole': 'Kai',
+  };
+
+  String _activeVoice(Object? voice) {
+    final id = voice is String && voice.isNotEmpty ? voice : 'Elliot';
+    return _retiredVoices[id] ?? id;
   }
 
   Map<String, dynamic> _assistantPayload(
@@ -589,7 +677,7 @@ class ApiServer {
     return {
       'name': agent['name'],
       'firstMessage': agent['greeting'],
-      'voice': {'provider': 'vapi', 'voiceId': agent['voice'] ?? 'Elliot'},
+      'voice': {'provider': 'vapi', 'voiceId': _activeVoice(agent['voice'])},
       'model': {
         'provider': 'openai',
         'model': 'gpt-4o-mini',
@@ -843,15 +931,6 @@ class ApiServer {
     return slots;
   }
 
-  Response _toolError(Map<String, dynamic> message, String error) {
-    final calls = (message['toolCallList'] as List? ?? const []);
-    return _json(200, {
-      'results': calls
-          .map((item) => {'toolCallId': (item as Map)['id'], 'error': error})
-          .toList(),
-    });
-  }
-
   String _workspaceKey(Request request) {
     final authorization = request.headers['authorization'] ?? '';
     if (!authorization.startsWith('Bearer ')) {
@@ -895,7 +974,7 @@ Middleware _cors() =>
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Headers':
               'Authorization, Content-Type, X-Webhook-Secret',
-          'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         },
       );
     };
@@ -930,6 +1009,13 @@ Map<String, dynamic> _arguments(dynamic value) {
     }
   }
   return _objectOrEmpty(value);
+}
+
+bool _isUsNumber(String number) => RegExp(r'^\+1\d{10}$').hasMatch(number);
+
+String _areaCode(Object? value) {
+  if (value is String && RegExp(r'^\d{3}$').hasMatch(value)) return value;
+  throw const ApiException(400, 'Enter a three-digit US area code.');
 }
 
 String _requiredString(Map<String, dynamic> arguments, String key) {

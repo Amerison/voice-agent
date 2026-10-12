@@ -17,14 +17,37 @@ abstract class WorkspaceRepository {
 
   Future<WorkspaceData> syncAgent(WorkspaceData data);
 
-  Future<WorkspaceData> provisionNumber(WorkspaceData data, String areaCode);
+  /// Gets the agent its own phone number in [areaCode], trying [number]
+  /// first when onboarding already showed one.
+  Future<WorkspaceData> provisionNumber(
+    WorkspaceData data,
+    String areaCode, {
+    String? number,
+  });
 
   /// Pulls the latest calls; in live mode they come from Vapi.
   Future<WorkspaceData> refresh(WorkspaceData data);
 
-  /// The Vapi account's phone number, the app's single source of truth.
-  Future<String?> accountNumber();
+  /// A number in [areaCode] that onboarding can show before it's bought, in
+  /// E.164 form. Null in demo mode.
+  Future<String?> availableNumber(String areaCode);
 }
+
+WorkspaceData? _readWorkspace(SharedPreferences preferences, String key) {
+  final encoded = preferences.getString(key);
+  if (encoded == null) return null;
+  try {
+    return WorkspaceData.fromJson(jsonDecode(encoded) as Map<String, dynamic>);
+  } on Object {
+    return null;
+  }
+}
+
+Future<void> _writeWorkspace(
+  SharedPreferences preferences,
+  String key,
+  WorkspaceData data,
+) => preferences.setString(key, jsonEncode(data.toJson()));
 
 Future<WorkspaceRepository> createRepository() async {
   final preferences = await SharedPreferences.getInstance();
@@ -47,25 +70,15 @@ class LocalWorkspaceRepository implements WorkspaceRepository {
   bool get isDemo => true;
 
   @override
-  Future<WorkspaceData> load() async {
-    final encoded = preferences.getString(_workspaceKey);
-    if (encoded == null) return emptyWorkspace();
-    try {
-      return WorkspaceData.fromJson(
-        jsonDecode(encoded) as Map<String, dynamic>,
-      );
-    } on Object {
-      return emptyWorkspace();
-    }
-  }
+  Future<WorkspaceData> load() async =>
+      _readWorkspace(preferences, _workspaceKey) ?? emptyWorkspace();
 
   @override
   Future<void> save(WorkspaceData data) =>
-      preferences.setString(_workspaceKey, jsonEncode(data.toJson()));
+      _writeWorkspace(preferences, _workspaceKey, data);
 
   @override
   Future<WorkspaceData> syncAgent(WorkspaceData data) async {
-    await Future<void>.delayed(const Duration(milliseconds: 650));
     final updated = data.copyWith(
       agent: data.agent.copyWith(
         syncStatus: SyncStatus.ready,
@@ -81,12 +94,12 @@ class LocalWorkspaceRepository implements WorkspaceRepository {
   @override
   Future<WorkspaceData> provisionNumber(
     WorkspaceData data,
-    String areaCode,
-  ) async {
-    await Future<void>.delayed(const Duration(milliseconds: 800));
+    String areaCode, {
+    String? number,
+  }) async {
     final updated = data.copyWith(
       agent: data.agent.copyWith(
-        phoneNumber: '+1 ($areaCode) 555-0142',
+        phoneNumber: number ?? '+1${areaCode}5550142',
         vapiPhoneNumberId: 'demo-number',
       ),
     );
@@ -95,7 +108,7 @@ class LocalWorkspaceRepository implements WorkspaceRepository {
   }
 
   @override
-  Future<String?> accountNumber() async => null;
+  Future<String?> availableNumber(String areaCode) async => null;
 
   @override
   Future<WorkspaceData> refresh(WorkspaceData data) async {
@@ -104,10 +117,15 @@ class LocalWorkspaceRepository implements WorkspaceRepository {
   }
 }
 
+/// Keeps the workspace (agent, CRM, meetings, calls) on the device and uses
+/// the server only for work that needs the Vapi and Twilio secrets.
 class ApiWorkspaceRepository implements WorkspaceRepository {
   ApiWorkspaceRepository({required this.preferences, required this.baseUrl});
 
   static const _tokenKey = 'voice_agent_installation_token';
+  // Separate from demo data so a demo assistant id never reaches Vapi.
+  static const _workspaceKey = 'voice_agent_live_workspace_v1';
+  static const _inboxCursorKey = 'voice_agent_inbox_cursor';
   final SharedPreferences preferences;
   final String baseUrl;
 
@@ -131,53 +149,64 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
 
   @override
   Future<WorkspaceData> load() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/v1/workspace'),
-      headers: _headers,
-    );
-    if (response.statusCode == 404) {
-      final initial = emptyWorkspace();
-      await save(initial);
-      return initial;
+    final saved = _readWorkspace(preferences, _workspaceKey);
+    if (saved != null) return saved;
+    final workspace = await _importFromServer() ?? emptyWorkspace();
+    await save(workspace);
+    return workspace;
+  }
+
+  /// Workspaces used to live on the server; brings one over on first launch.
+  Future<WorkspaceData?> _importFromServer() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/v1/workspace'), headers: _headers)
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) return null;
+      return _decodeWorkspace(response);
+    } on Object {
+      return null;
     }
-    return _decodeWorkspace(response);
   }
 
   @override
-  Future<void> save(WorkspaceData data) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/v1/workspace'),
-      headers: _headers,
-      body: jsonEncode(data.toJson()),
-    );
-    _ensureSuccess(response);
-  }
+  Future<void> save(WorkspaceData data) =>
+      _writeWorkspace(preferences, _workspaceKey, data);
 
   @override
-  Future<WorkspaceData> syncAgent(WorkspaceData data) =>
-      _postWorkspace('/v1/agent/sync', data);
+  Future<WorkspaceData> syncAgent(WorkspaceData data) async =>
+      _saved(await _post('/v1/agent/sync', {'workspace': data.toJson()}));
 
   @override
   Future<WorkspaceData> provisionNumber(
     WorkspaceData data,
-    String areaCode,
-  ) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/v1/agent/provision-number'),
-      headers: _headers,
-      body: jsonEncode({'workspace': data.toJson(), 'areaCode': areaCode}),
-    );
-    return _decodeWorkspace(response);
+    String areaCode, {
+    String? number,
+  }) async => _saved(
+    await _post('/v1/agent/provision-number', {
+      'workspace': data.toJson(),
+      'areaCode': areaCode,
+      'number': ?number,
+    }),
+  );
+
+  @override
+  Future<WorkspaceData> refresh(WorkspaceData data) async {
+    final payload = await _post('/v1/calls/refresh', {
+      'workspace': data.toJson(),
+      'inboxCursor': preferences.getInt(_inboxCursorKey) ?? 0,
+    });
+    final workspace = await _saved(payload);
+    // Only after saving: the cursor tells the server it can drop these.
+    final cursor = payload['inboxCursor'];
+    if (cursor is int) await preferences.setInt(_inboxCursorKey, cursor);
+    return workspace;
   }
 
   @override
-  Future<WorkspaceData> refresh(WorkspaceData data) =>
-      _postWorkspace('/v1/calls/refresh', data);
-
-  @override
-  Future<String?> accountNumber() async {
+  Future<String?> availableNumber(String areaCode) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/v1/vapi/number'),
+      Uri.parse('$baseUrl/v1/numbers/available?areaCode=$areaCode'),
       headers: _headers,
     );
     _ensureSuccess(response);
@@ -185,20 +214,30 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
         as String?;
   }
 
-  Future<WorkspaceData> _postWorkspace(String path, WorkspaceData data) async {
+  Future<Map<String, dynamic>> _post(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final response = await http.post(
       Uri.parse('$baseUrl$path'),
       headers: _headers,
-      body: jsonEncode({'workspace': data.toJson()}),
+      body: jsonEncode(body),
     );
-    return _decodeWorkspace(response);
+    _ensureSuccess(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<WorkspaceData> _saved(Map<String, dynamic> payload) async {
+    final workspace = WorkspaceData.fromJson(
+      payload['workspace'] as Map<String, dynamic>,
+    );
+    await save(workspace);
+    return workspace;
   }
 
   WorkspaceData _decodeWorkspace(http.Response response) {
-    _ensureSuccess(response);
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final value = payload['workspace'] as Map<String, dynamic>? ?? payload;
-    return WorkspaceData.fromJson(value);
+    return WorkspaceData.fromJson(payload['workspace'] as Map<String, dynamic>);
   }
 
   void _ensureSuccess(http.Response response) {

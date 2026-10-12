@@ -358,7 +358,8 @@ class _DrawerAccount extends StatelessWidget {
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
           ),
           Text(
-            agent.phoneNumber ?? agent.reservedNumber ?? 'No phone number yet',
+            formatPhone(agent.phoneNumber ?? agent.reservedNumber) ??
+                'No phone number yet',
             style: TextStyle(color: HubColors.textMuted),
           ),
         ],
@@ -1133,6 +1134,7 @@ class HomeScreen extends StatelessWidget {
     final qualified = controller.data.contacts
         .where((contact) => contact.leadStatus == 'Qualified')
         .length;
+    final number = formatPhone(controller.data.agent.phoneNumber);
     return RefreshIndicator(
       onRefresh: controller.refresh,
       child: HubPage(
@@ -1190,10 +1192,12 @@ class HomeScreen extends StatelessWidget {
             title: 'Incoming calls',
             detail: 'recent activity',
             child: calls.isEmpty
-                ? const HubEmptyState(
+                ? HubEmptyState(
                     icon: CupertinoIcons.phone,
                     title: 'You have no calls',
-                    message: 'Calls will appear here after they end.',
+                    message: number == null
+                        ? 'Calls will appear here after they end.'
+                        : 'Call $number to try it. Calls appear here after they end.',
                   )
                 : Column(
                     children: [
@@ -1422,7 +1426,6 @@ class DeployScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final agent = controller.data.agent;
-    final ready = agent.syncStatus == SyncStatus.ready;
     return HubPage(
       headline: 'Turn your configuration into a live phone agent.',
       children: [
@@ -1451,36 +1454,6 @@ class DeployScreen extends StatelessWidget {
             ],
           ),
         ),
-        HubCard(
-          icon: CupertinoIcons.arrow_2_circlepath,
-          title: 'Sync',
-          detail: 'assistant',
-          trailing: _StatusPill(status: agent.syncStatus),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                ready
-                    ? '${agent.name} is synced and ready for calls.'
-                    : 'Sync your latest identity, training, and actions to Vapi.',
-              ),
-              if (agent.lastSyncedAt != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Last synced ${relativeDate(agent.lastSyncedAt!)}',
-                  style: TextStyle(color: HubColors.textMuted),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Center(
-                child: OutlinedButton(
-                  onPressed: controller.isBusy ? null : controller.syncAgent,
-                  child: Text(ready ? 'Sync changes' : 'Sync agent'),
-                ),
-              ),
-            ],
-          ),
-        ),
         if (agent.phoneNumber == null)
           HubCard(
             icon: CupertinoIcons.phone,
@@ -1489,26 +1462,13 @@ class DeployScreen extends StatelessWidget {
             child: HubEmptyState(
               icon: CupertinoIcons.phone,
               title: 'Get a phone number',
-              message: ready
-                  ? 'Choose a US area code for one inbound number.'
-                  : 'Sync the agent first, then choose a US area code.',
+              message: 'Choose a US area code for one inbound number.',
               actionLabel: 'Get number',
-              onAction: ready && !controller.isBusy
-                  ? () => _provision(context)
-                  : null,
+              onAction: controller.isBusy ? null : () => _provision(context),
             ),
           )
         else
           _LiveNumberCard(agent: agent),
-        Text(
-          'Inbound only · English · No human handoff',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: HubFonts.mono,
-            fontSize: 12,
-            color: HubColors.textSubtle,
-          ),
-        ),
       ],
     );
   }
@@ -1518,7 +1478,7 @@ class DeployScreen extends StatelessWidget {
       context,
       title: 'Choose area code',
       label: 'US area code',
-      hint: '415',
+      hint: '628',
       keyboardType: TextInputType.number,
       maxLength: 3,
     );
@@ -1558,7 +1518,7 @@ class _LiveNumberCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            agent.phoneNumber!,
+            formatPhone(agent.phoneNumber)!,
             style: Theme.of(
               context,
             ).textTheme.headlineMedium?.copyWith(color: Colors.white),
@@ -1611,27 +1571,5 @@ class _ChecklistItem extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.status});
-
-  final SyncStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    return switch (status) {
-      SyncStatus.draft => const HubPill(label: 'Draft'),
-      SyncStatus.syncing => const HubPill(
-        label: 'Syncing',
-        tone: PillTone.accent,
-      ),
-      SyncStatus.ready => const HubPill(label: 'Ready', tone: PillTone.success),
-      SyncStatus.failed => const HubPill(
-        label: 'Failed',
-        tone: PillTone.danger,
-      ),
-    };
   }
 }

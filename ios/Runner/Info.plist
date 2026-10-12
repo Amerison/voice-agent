@@ -31,6 +31,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to the Customer Agent server on your network to set up your agent and phone number.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Use your microphone to test your voice agent.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

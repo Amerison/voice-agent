@@ -1,5 +1,10 @@
+import 'dart:math' as math;
+import 'dart:ui' show PointMode;
+
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'theme.dart';
 
@@ -323,27 +328,192 @@ class CircleAction extends StatelessWidget {
   }
 }
 
-class BrandMark extends StatelessWidget {
+/// Smooth, non-repeating wander in roughly [-1, 1]. Each [seed] is an
+/// independent curve, so sampling it over time never settles into a loop.
+double drift(double x, int seed) =>
+    _valueNoise(x, seed) * .65 + _valueNoise(x * 2.3 + 17.3, seed + 101) * .35;
+
+double _valueNoise(double x, int seed) {
+  final i = x.floorToDouble();
+  final f = x - i;
+  final ease = f * f * f * (f * (f * 6 - 15) + 10);
+  return _hash(i, seed) * (1 - ease) + _hash(i + 1, seed) * ease;
+}
+
+double _hash(double i, int seed) {
+  final v = math.sin(i * 127.1 + seed * 311.7) * 43758.5453;
+  return (v - v.floorToDouble()) * 2 - 1;
+}
+
+/// Free-running seconds for ambient motion. Holds still while the platform
+/// asks to reduce motion.
+mixin DriftClock<T extends StatefulWidget>
+    on SingleTickerProviderStateMixin<T> {
+  final clock = ValueNotifier<double>(0);
+  late final Ticker _ticker = createTicker(
+    (elapsed) => clock.value =
+        _resumeAt + elapsed.inMicroseconds / Duration.microsecondsPerSecond,
+  );
+  var _resumeAt = 0.0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      if (_ticker.isActive) {
+        _ticker.stop();
+        _resumeAt = clock.value;
+      }
+    } else if (!_ticker.isActive) {
+      _ticker.start();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    clock.dispose();
+    super.dispose();
+  }
+}
+
+/// Soft, grainy cloud of light that drifts and morphs at random. The app's
+/// brand mark.
+class BrandMark extends StatefulWidget {
   const BrandMark({super.key, this.size = 44});
 
   final double size;
 
   @override
+  State<BrandMark> createState() => _BrandMarkState();
+}
+
+class _BrandMarkState extends State<BrandMark>
+    with SingleTickerProviderStateMixin, DriftClock {
+  final _seed = math.Random().nextInt(1 << 12);
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: const BoxDecoration(
-        color: HubColors.orange,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        CupertinoIcons.waveform,
-        color: Colors.white,
-        size: size * .58,
+    return RepaintBoundary(
+      child: SizedBox.square(
+        dimension: widget.size,
+        child: CustomPaint(
+          painter: _HaloPainter(clock: clock, seed: _seed),
+        ),
       ),
     );
   }
+}
+
+class _HaloPainter extends CustomPainter {
+  _HaloPainter({required this.clock, required this.seed})
+    : super(repaint: clock);
+
+  final ValueListenable<double> clock;
+  final int seed;
+
+  /// Painted back to front, so the peach puff reads as the brightest core.
+  static const _puffs = [
+    HubColors.magenta,
+    Color(0xFFC23F51),
+    HubColors.orange,
+    Color(0xFFF7A27C),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = clock.value;
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide * .3;
+    final layer = Rect.fromCircle(center: center, radius: radius * 3.6);
+
+    canvas
+      ..saveLayer(layer, Paint())
+      ..drawPath(
+        _cloud(center, radius * 1.05, t, seed),
+        Paint()
+          ..color = HubColors.magenta.withValues(alpha: .22)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * .55),
+      );
+    for (final (i, color) in _puffs.indexed) {
+      final puffSeed = seed + 37 * (i + 1);
+      final offset =
+          Offset(drift(t * .16, puffSeed), drift(t * .16, puffSeed + 7)) *
+          radius *
+          .45;
+      final scale = .52 + .12 * drift(t * .2, puffSeed + 13);
+      canvas.drawPath(
+        _cloud(center + offset, radius * scale, t, puffSeed),
+        Paint()
+          ..color = color.withValues(alpha: .38)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * .24),
+      );
+    }
+    _grain(canvas, Rect.fromCircle(center: center, radius: radius * 2), t);
+    canvas.restore();
+  }
+
+  /// A blob whose lobes swell, shrink, and slide independently over time.
+  Path _cloud(Offset center, double radius, double t, int seed) {
+    const steps = 72;
+    final lobes = [
+      for (var k = 2; k <= 4; k++)
+        (
+          k: k,
+          amp: .09 / k * drift(t * .13, seed + 19 * k),
+          phase: 3 * drift(t * .06, seed + 23 * k),
+        ),
+    ];
+    final stretch = .05 * drift(t * .12, seed + 3);
+    final path = Path();
+    for (var i = 0; i <= steps; i++) {
+      final angle = i / steps * 2 * math.pi;
+      var wave = 0.0;
+      for (final lobe in lobes) {
+        wave += lobe.amp * math.sin(lobe.k * angle + lobe.phase);
+      }
+      final r = radius * (1 + wave);
+      final point = Offset(
+        center.dx + math.cos(angle) * r * (1 + stretch),
+        center.dy + math.sin(angle) * r * (1 - stretch),
+      );
+      i == 0
+          ? path.moveTo(point.dx, point.dy)
+          : path.lineTo(point.dx, point.dy);
+    }
+    return path..close();
+  }
+
+  /// Film-like speckle, re-rolled about 12 times a second and kept inside
+  /// the glow by [BlendMode.srcATop].
+  void _grain(Canvas canvas, Rect bounds, double t) {
+    final random = math.Random(seed * 7919 + (t * 12).floor());
+    final count = (bounds.width * bounds.height / 6).round();
+    Float32List speckle() => Float32List.fromList([
+      for (var i = 0; i < count; i++) ...[
+        bounds.left + random.nextDouble() * bounds.width,
+        bounds.top + random.nextDouble() * bounds.height,
+      ],
+    ]);
+    final paint = Paint()
+      ..blendMode = BlendMode.srcATop
+      ..strokeWidth = .45;
+    canvas
+      ..drawRawPoints(
+        PointMode.points,
+        speckle(),
+        paint..color = Colors.white.withValues(alpha: .22),
+      )
+      ..drawRawPoints(
+        PointMode.points,
+        speckle(),
+        paint..color = Colors.black.withValues(alpha: .18),
+      );
+  }
+
+  @override
+  bool shouldRepaint(_HaloPainter oldDelegate) =>
+      oldDelegate.clock != clock || oldDelegate.seed != seed;
 }
 
 class InitialsAvatar extends StatelessWidget {

@@ -53,6 +53,14 @@ class KnowledgeSource {
       );
 }
 
+/// Vapi retired these voices; saved agents move to the closest active one.
+const _retiredVoices = {'Paige': 'Clara', 'Kylie': 'Savannah', 'Cole': 'Kai'};
+
+String _activeVoice(String? voice) {
+  final id = voice == null || voice.isEmpty ? 'Elliot' : voice;
+  return _retiredVoices[id] ?? id;
+}
+
 class AgentConfig {
   const AgentConfig({
     required this.id,
@@ -200,7 +208,7 @@ class AgentConfig {
     syncStatus: SyncStatus.values.byName(
       json['syncStatus'] as String? ?? 'draft',
     ),
-    voice: json['voice'] as String? ?? 'Elliot',
+    voice: _activeVoice(json['voice'] as String?),
     calendarConnected: json['calendarConnected'] as bool? ?? false,
     reservedNumber: json['reservedNumber'] as String?,
     phoneNumber: json['phoneNumber'] as String?,
