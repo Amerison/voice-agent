@@ -517,6 +517,7 @@ class ApiServer {
       'callerNumber':
           customer['number'] as String? ??
           (call['type'] == 'webCall' ? 'Web test call' : 'Unknown caller'),
+      'isTest': call['type'] == 'webCall',
       'resolved': resolution.$1,
       'resolutionReason': resolution.$2,
       'transcript': transcript,
@@ -629,10 +630,11 @@ class ApiServer {
             'email': {'type': 'string'},
             'company': {'type': 'string'},
             'jobTitle': {'type': 'string'},
-            'leadStatus': {
-              'type': 'string',
-              'enum': ['New', 'Qualified', 'Nurture', 'Disqualified'],
-            },
+            if (agent['qualifyLeadsEnabled'] != false)
+              'leadStatus': {
+                'type': 'string',
+                'enum': ['New', 'Qualified', 'Nurture', 'Disqualified'],
+              },
             'budgetRange': {'type': 'string'},
             'notes': {'type': 'string'},
           },

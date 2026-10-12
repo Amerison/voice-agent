@@ -1,0 +1,58 @@
+import 'models.dart';
+
+/// Sample CRM records added once to a workspace so the CRM isn't empty.
+/// Phone numbers use the reserved 555-01xx range so they never match a caller.
+List<Contact> mockContacts(DateTime now) => [
+  Contact(
+    id: 'mock-contact-brian-halligan',
+    name: 'Brian Halligan',
+    phone: '+16175550101',
+    email: 'brian.halligan@example.com',
+    company: 'HubSpot',
+    jobTitle: 'Co-founder',
+    leadSource: 'Referral',
+    leadStatus: 'Qualified',
+    budgetRange: r'$25k–$50k',
+    notes: 'Interested in rolling out an AI receptionist for inbound sales.',
+    createdAt: now.subtract(const Duration(hours: 3)),
+  ),
+  Contact(
+    id: 'mock-contact-priya-shah',
+    name: 'Priya Shah',
+    phone: '+14155550102',
+    email: 'priya.shah@example.com',
+    company: 'Brightline Dental',
+    jobTitle: 'Practice Manager',
+    leadSource: 'Inbound call',
+    leadStatus: 'New',
+    budgetRange: r'$5k–$10k',
+    notes: 'Asked about after-hours call coverage.',
+    createdAt: now.subtract(const Duration(days: 1)),
+  ),
+  Contact(
+    id: 'mock-contact-marcus-reed',
+    name: 'Marcus Reed',
+    phone: '+12125550103',
+    email: 'marcus.reed@example.com',
+    company: 'Reed & Co. Plumbing',
+    jobTitle: 'Owner',
+    leadSource: 'Website',
+    leadStatus: 'Nurture',
+    budgetRange: 'Not shared',
+    notes: 'Wants to revisit next quarter.',
+    createdAt: now.subtract(const Duration(days: 3)),
+  ),
+  Contact(
+    id: 'mock-contact-elena-torres',
+    name: 'Elena Torres',
+    phone: '+13125550104',
+    email: 'elena.torres@example.com',
+    company: 'Summit Realty',
+    jobTitle: 'Head of Operations',
+    leadSource: 'Inbound call',
+    leadStatus: 'Qualified',
+    budgetRange: r'$10k–$25k',
+    notes: 'Needs meeting booking for 12 agents.',
+    createdAt: now.subtract(const Duration(days: 6)),
+  ),
+];

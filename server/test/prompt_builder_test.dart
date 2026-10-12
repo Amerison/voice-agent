@@ -43,4 +43,16 @@ void main() {
     expect(prompt, contains('RECEPTIONIST BEHAVIOR'));
     expect(prompt, isNot(contains('LEAD QUALIFICATION BEHAVIOR')));
   });
+
+  test('skips qualification when the qualify leads action is off', () {
+    final prompt = buildLeadQualificationPrompt({
+      'name': 'Maya',
+      'persona': 'an SDR',
+      'companyName': 'Northstar',
+      'qualifyLeadsEnabled': false,
+    });
+
+    expect(prompt, contains('CALLER BEHAVIOR'));
+    expect(prompt, isNot(contains('LEAD QUALIFICATION BEHAVIOR')));
+  });
 }

@@ -125,7 +125,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   var _calendarConnected = false;
   var _tested = false;
   var _useExistingNumber = true;
-  final _numberKey = GlobalKey();
 
   @override
   void initState() {
@@ -265,24 +264,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   void _advanceFrom(_Step step, Duration delay) {
     Future.delayed(delay, () {
       if (mounted && _step == step) _next();
-    });
-  }
-
-  void _chooseType(AgentType type) {
-    final first = _type == null;
-    setState(() => _type = type);
-    if (!first) return;
-    // Bring the number reveal into view on short screens once it has grown.
-    Future.delayed(const Duration(milliseconds: 400), () {
-      final card = _numberKey.currentContext;
-      if (card != null && card.mounted) {
-        Scrollable.ensureVisible(
-          card,
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOutCubic,
-          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-        );
-      }
     });
   }
 
@@ -454,7 +435,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             subtitle:
                 'Answer questions, take messages, and book appointments for every caller.',
             selected: _type == AgentType.receptionist,
-            onTap: () => _chooseType(AgentType.receptionist),
+            onTap: () => setState(() => _type = AgentType.receptionist),
           ),
           _OptionTile(
             icon: CupertinoIcons.person_crop_circle_badge_checkmark,
@@ -462,21 +443,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
             subtitle:
                 'Qualify inbound leads and book meetings with the ones who fit.',
             selected: _type == AgentType.leadQualification,
-            onTap: () => _chooseType(AgentType.leadQualification),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 380),
-            curve: Curves.easeOutCubic,
-            alignment: Alignment.topCenter,
-            child: _type == null
-                ? const SizedBox(width: double.infinity)
-                : Padding(
-                    padding: const EdgeInsets.only(top: 16),
-                    child: _Rise(
-                      order: 1,
-                      child: _NumberCard(key: _numberKey, number: _number),
-                    ),
-                  ),
+            onTap: () => setState(() => _type = AgentType.leadQualification),
           ),
         ],
       ),
@@ -1515,79 +1482,6 @@ class _Segmented extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _NumberCard extends StatelessWidget {
-  const _NumberCard({super.key, required this.number});
-
-  final String number;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: HubColors.text,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                CupertinoIcons.device_phone_portrait,
-                color: HubColors.background,
-                size: 26,
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      number,
-                      style: TextStyle(
-                        color: HubColors.background,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    Text(
-                      'Your agent’s new number',
-                      style: TextStyle(
-                        color: HubColors.background.withValues(alpha: .6),
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              CupertinoIcons.checkmark_circle_fill,
-              size: 15,
-              color: HubColors.textSubtle,
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                'Keep or port your own number later',
-                style: TextStyle(color: HubColors.textSubtle, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-      ],
     );
   }
 }

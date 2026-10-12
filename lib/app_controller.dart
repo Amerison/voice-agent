@@ -4,15 +4,17 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' show ClientException;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'mock_contacts.dart';
 import 'models.dart';
 import 'repository.dart';
 
 class AppController extends ChangeNotifier {
-  AppController(this.repository);
+  AppController(this.repository, {this.seedMockContacts = true});
 
   static const _darkModeKey = 'voice_agent_dark_mode';
 
   final WorkspaceRepository repository;
+  final bool seedMockContacts;
   WorkspaceData? _data;
   Future<void>? _syncing;
   bool _busy = false;
@@ -30,6 +32,7 @@ class AppController extends ChangeNotifier {
     final preferences = await SharedPreferences.getInstance();
     _darkMode = preferences.getBool(_darkModeKey) ?? true;
     await _run(() async => _data = await repository.load());
+    if (seedMockContacts && isReady) await _addMockContacts(preferences);
     if (!isDemo && isReady && data.onboardingComplete) await refresh();
     if (isReady && data.onboardingComplete) unawaited(syncAgent());
   }
@@ -219,6 +222,19 @@ class AppController extends ChangeNotifier {
     );
     notifyListeners();
     await _persist();
+  }
+
+  /// Runs once per workspace, so deleted samples don't come back.
+  Future<void> _addMockContacts(SharedPreferences preferences) async {
+    final key = 'voice_agent_mock_contacts_${isDemo ? 'demo' : 'live'}';
+    if (preferences.getBool(key) ?? false) return;
+    final existing = data.contacts.map((contact) => contact.id).toSet();
+    final added = mockContacts(
+      DateTime.now(),
+    ).where((contact) => !existing.contains(contact.id));
+    _data = data.copyWith(contacts: [...data.contacts, ...added]);
+    await _persist();
+    await preferences.setBool(key, true);
   }
 
   void clearError() {

@@ -28,21 +28,23 @@ void showCallSheet(BuildContext context, CallRecord call) {
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
               children: [
                 _CallSummary(call: call),
-                const SizedBox(height: 16),
-                HubCard(
-                  icon: call.resolved
-                      ? CupertinoIcons.checkmark_circle
-                      : CupertinoIcons.exclamationmark_circle,
-                  title: 'Resolution',
-                  trailing: HubPill(
-                    label: call.resolved ? 'Resolved' : 'Unresolved',
-                    tone: call.resolved ? PillTone.success : PillTone.danger,
+                if (!call.isTest) ...[
+                  const SizedBox(height: 16),
+                  HubCard(
+                    icon: call.resolved
+                        ? CupertinoIcons.checkmark_circle
+                        : CupertinoIcons.exclamationmark_circle,
+                    title: 'Resolution',
+                    trailing: HubPill(
+                      label: call.resolved ? 'Resolved' : 'Unresolved',
+                      tone: call.resolved ? PillTone.success : PillTone.danger,
+                    ),
+                    child: Text(
+                      call.resolutionReason,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
                   ),
-                  child: Text(
-                    call.resolutionReason,
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ),
+                ],
                 if (call.actions.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   HubCard(

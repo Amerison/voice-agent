@@ -687,9 +687,11 @@ class _AddKnowledgePageState extends State<_AddKnowledgePage> {
           const SizedBox(height: 22),
           if (_kind == KnowledgeKind.webpage)
             TextField(
+              key: const ValueKey('url'),
               controller: _url,
               autofocus: true,
               keyboardType: TextInputType.url,
+              autocorrect: false,
               decoration: const InputDecoration(
                 labelText: 'Page URL',
                 hintText: 'https://example.com/pricing',
@@ -697,16 +699,30 @@ class _AddKnowledgePageState extends State<_AddKnowledgePage> {
             )
           else ...[
             TextField(
+              key: const ValueKey('question'),
               controller: _question,
               autofocus: true,
-              decoration: const InputDecoration(labelText: 'Question'),
+              keyboardType: TextInputType.text,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: 'Question',
+                hintText: 'What are your opening hours?',
+              ),
             ),
             const SizedBox(height: 16),
             TextField(
+              key: const ValueKey('answer'),
               controller: _answer,
               minLines: 4,
               maxLines: 8,
-              decoration: const InputDecoration(labelText: 'Answer'),
+              keyboardType: TextInputType.multiline,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Answer',
+                hintText: 'We’re open 9am to 5pm, Monday to Friday.',
+                alignLabelWithHint: true,
+              ),
             ),
           ],
         ],
@@ -898,8 +914,8 @@ class _IdentityScreenState extends State<IdentityScreen> {
         ),
         HubCard(
           icon: CupertinoIcons.quote_bubble,
-          title: 'First',
-          detail: 'impression',
+          title: 'Welcome',
+          detail: 'message',
           child: TextField(
             controller: _greeting,
             minLines: 2,
@@ -1016,6 +1032,19 @@ class _TrainScreenState extends State<TrainScreen> {
                 value: agent.createContactEnabled,
                 onChanged: (value) => controller.updateAgent(
                   agent.copyWith(createContactEnabled: value),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 6),
+                child: Divider(),
+              ),
+              _ActionTile(
+                icon: CupertinoIcons.person_crop_circle_badge_checkmark,
+                title: 'Qualify leads',
+                subtitle: 'Mark good-fit callers as qualified in reports.',
+                value: agent.qualifyLeadsEnabled,
+                onChanged: (value) => controller.updateAgent(
+                  agent.copyWith(qualifyLeadsEnabled: value),
                 ),
               ),
             ],
@@ -1148,7 +1177,9 @@ class HomeScreen extends StatelessWidget {
             .where((meeting) => meeting.startsAt.isAfter(now))
             .toList()
           ..sort((a, b) => a.startsAt.compareTo(b.startsAt));
-    final resolved = calls.where((call) => call.resolved).length;
+    final realCalls = calls.where((call) => !call.isTest).toList();
+    final resolved = realCalls.where((call) => call.resolved).length;
+    final showQualified = controller.data.agent.qualifyLeadsEnabled;
     final qualified = controller.data.contacts
         .where((contact) => contact.leadStatus == 'Qualified')
         .length;
@@ -1171,9 +1202,9 @@ class HomeScreen extends StatelessWidget {
               Expanded(
                 child: _MetricCard(
                   icon: CupertinoIcons.checkmark_circle,
-                  value: calls.isEmpty
+                  value: realCalls.isEmpty
                       ? '—'
-                      : '${(resolved / calls.length * 100).round()}%',
+                      : '${(resolved / realCalls.length * 100).round()}%',
                   label: 'Resolved',
                 ),
               ),
@@ -1185,12 +1216,14 @@ class HomeScreen extends StatelessWidget {
             detail: 'latest performance',
             child: Column(
               children: [
-                _OverviewRow(
-                  icon: CupertinoIcons.person_2,
-                  label: 'Qualified leads',
-                  value: '$qualified',
-                ),
-                const Divider(),
+                if (showQualified) ...[
+                  _OverviewRow(
+                    icon: CupertinoIcons.person_2,
+                    label: 'Qualified leads',
+                    value: '$qualified',
+                  ),
+                  const Divider(),
+                ],
                 _OverviewRow(
                   icon: CupertinoIcons.calendar,
                   label: 'Upcoming meetings',
@@ -1369,12 +1402,16 @@ class _CallRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            IconBadge(
-              icon: call.resolved
-                  ? CupertinoIcons.checkmark_alt
-                  : CupertinoIcons.xmark,
-              iconColor: call.resolved ? HubColors.success : HubColors.danger,
-            ),
+            call.isTest
+                ? const IconBadge(icon: CupertinoIcons.waveform)
+                : IconBadge(
+                    icon: call.resolved
+                        ? CupertinoIcons.checkmark_alt
+                        : CupertinoIcons.xmark,
+                    iconColor: call.resolved
+                        ? HubColors.success
+                        : HubColors.danger,
+                  ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -1392,10 +1429,12 @@ class _CallRow extends StatelessWidget {
                 ],
               ),
             ),
-            HubPill(
-              label: call.resolved ? 'Resolved' : 'Unresolved',
-              tone: call.resolved ? PillTone.success : PillTone.danger,
-            ),
+            call.isTest
+                ? const HubPill(label: 'Test call')
+                : HubPill(
+                    label: call.resolved ? 'Resolved' : 'Unresolved',
+                    tone: call.resolved ? PillTone.success : PillTone.danger,
+                  ),
             const SizedBox(width: 6),
             const Icon(CupertinoIcons.chevron_right, size: 16),
           ],
@@ -1466,7 +1505,10 @@ class DeployScreen extends StatelessWidget {
                 text: 'Knowledge added',
               ),
               _ChecklistItem(
-                done: agent.bookMeetingEnabled || agent.createContactEnabled,
+                done:
+                    agent.bookMeetingEnabled ||
+                    agent.createContactEnabled ||
+                    agent.qualifyLeadsEnabled,
                 text: 'At least one action enabled',
               ),
             ],

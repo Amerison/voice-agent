@@ -20,6 +20,8 @@ String buildLeadQualificationPrompt(
 
   final behavior = agent['type'] == 'receptionist'
       ? _receptionistBehavior
+      : agent['qualifyLeadsEnabled'] == false
+      ? _discoveryBehavior
       : _leadQualificationBehavior;
 
   return '''
@@ -68,5 +70,16 @@ LEAD QUALIFICATION BEHAVIOR
 4. Briefly acknowledge each answer before the next question.
 5. Handle objections by acknowledging, asking one clarifying question, then responding.
 6. If qualified, offer two specific meeting times. If not, thank them and offer a relevant resource.
+7. Before ending, confirm contact details and save the contact when that action is available.
+8. There is no live human handoff. Offer to take a message or book a callback.''';
+
+const _discoveryBehavior = '''
+CALLER BEHAVIOR
+1. Learn why the caller reached out and ask whether they have about a minute.
+2. Ask open discovery questions before explaining the product.
+3. Do not score, rate, or label the caller as qualified or unqualified.
+4. Briefly acknowledge each answer before the next question.
+5. Handle objections by acknowledging, asking one clarifying question, then responding.
+6. When the caller is interested, offer two specific meeting times.
 7. Before ending, confirm contact details and save the contact when that action is available.
 8. There is no live human handoff. Offer to take a message or book a callback.''';

@@ -96,11 +96,13 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
       if (mounted) setState(() => _state = _VoiceTestState.connecting);
       await VapiClient.platformInitialized.future;
       _client = VapiClient(_vapiPublicKey.trim());
+      debugPrint('DIAG sheet: start() calling ${DateTime.now().toIso8601String()}');
       final call = await _client!.start(
         assistantId: useSavedAssistant ? agent.vapiAssistantId : null,
         assistant: useSavedAssistant ? null : _transientAssistant(agent),
         assistantOverrides: const {'recordingEnabled': false},
       );
+      debugPrint('DIAG sheet: start() returned status=${call.status} mounted=$mounted');
       if (!mounted) {
         await call.stop();
         call.dispose();
@@ -120,7 +122,8 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
             ? _VoiceTestState.listening
             : _VoiceTestState.connecting;
       });
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      debugPrint('DIAG sheet: start() threw $error\n$stack');
       _fail(_friendlyError(error));
     }
   }
@@ -136,6 +139,7 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
   }
 
   void _handleEvent(VapiEvent event) {
+    debugPrint('DIAG sheet: event ${event.label}');
     if (!mounted) return;
     switch (event.label) {
       case 'call-start':
@@ -293,6 +297,7 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
   }
 
   Future<void> _close() async {
+    debugPrint('DIAG sheet: close');
     final controller = widget.controller;
     final hadCall = _call != null;
     await _stop();
@@ -306,6 +311,7 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
   }
 
   Future<void> _retry() async {
+    debugPrint('DIAG sheet: retry');
     await _events?.cancel();
     _call?.dispose();
     _client?.dispose();
@@ -323,6 +329,7 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
 
   @override
   void dispose() {
+    debugPrint('DIAG sheet: dispose call=${_call?.status}');
     _stopClock();
     _transcript.dispose();
     _pulse.dispose();

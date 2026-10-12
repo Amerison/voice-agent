@@ -75,6 +75,7 @@ class AgentConfig {
     required this.knowledgeSources,
     required this.bookMeetingEnabled,
     required this.createContactEnabled,
+    this.qualifyLeadsEnabled = true,
     required this.syncStatus,
     this.voice = 'Elliot',
     this.calendarConnected = false,
@@ -99,6 +100,9 @@ class AgentConfig {
   final List<KnowledgeSource> knowledgeSources;
   final bool bookMeetingEnabled;
   final bool createContactEnabled;
+
+  /// Off hides qualified leads from reports and stops the agent tagging them.
+  final bool qualifyLeadsEnabled;
   final SyncStatus syncStatus;
 
   /// Vapi built-in voice id.
@@ -126,6 +130,7 @@ class AgentConfig {
     List<KnowledgeSource>? knowledgeSources,
     bool? bookMeetingEnabled,
     bool? createContactEnabled,
+    bool? qualifyLeadsEnabled,
     SyncStatus? syncStatus,
     String? voice,
     bool? calendarConnected,
@@ -150,6 +155,7 @@ class AgentConfig {
     knowledgeSources: knowledgeSources ?? this.knowledgeSources,
     bookMeetingEnabled: bookMeetingEnabled ?? this.bookMeetingEnabled,
     createContactEnabled: createContactEnabled ?? this.createContactEnabled,
+    qualifyLeadsEnabled: qualifyLeadsEnabled ?? this.qualifyLeadsEnabled,
     syncStatus: syncStatus ?? this.syncStatus,
     voice: voice ?? this.voice,
     calendarConnected: calendarConnected ?? this.calendarConnected,
@@ -176,6 +182,7 @@ class AgentConfig {
     'knowledgeSources': knowledgeSources.map((item) => item.toJson()).toList(),
     'bookMeetingEnabled': bookMeetingEnabled,
     'createContactEnabled': createContactEnabled,
+    'qualifyLeadsEnabled': qualifyLeadsEnabled,
     'syncStatus': syncStatus.name,
     'voice': voice,
     'calendarConnected': calendarConnected,
@@ -205,6 +212,7 @@ class AgentConfig {
         .toList(),
     bookMeetingEnabled: json['bookMeetingEnabled'] as bool? ?? true,
     createContactEnabled: json['createContactEnabled'] as bool? ?? true,
+    qualifyLeadsEnabled: json['qualifyLeadsEnabled'] as bool? ?? true,
     syncStatus: SyncStatus.values.byName(
       json['syncStatus'] as String? ?? 'draft',
     ),
@@ -336,12 +344,16 @@ class CallRecord {
     required this.transcript,
     required this.actions,
     required this.endedReason,
+    this.isTest = false,
   });
 
   final String id;
   final DateTime startedAt;
   final int durationSeconds;
   final String callerNumber;
+
+  /// In-app voice tests; kept out of resolution stats.
+  final bool isTest;
   final bool resolved;
   final String resolutionReason;
   final List<TranscriptMessage> transcript;
@@ -353,6 +365,7 @@ class CallRecord {
     'startedAt': startedAt.toIso8601String(),
     'durationSeconds': durationSeconds,
     'callerNumber': callerNumber,
+    'isTest': isTest,
     'resolved': resolved,
     'resolutionReason': resolutionReason,
     'transcript': transcript.map((item) => item.toJson()).toList(),
@@ -365,6 +378,8 @@ class CallRecord {
     startedAt: DateTime.parse(json['startedAt'] as String),
     durationSeconds: (json['durationSeconds'] as num?)?.round() ?? 0,
     callerNumber: json['callerNumber'] as String? ?? 'Unknown caller',
+    isTest:
+        json['isTest'] as bool? ?? json['callerNumber'] == 'Web test call',
     resolved: json['resolved'] as bool? ?? false,
     resolutionReason: json['resolutionReason'] as String? ?? 'Not analyzed',
     transcript: ((json['transcript'] as List?) ?? const [])

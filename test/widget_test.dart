@@ -13,7 +13,10 @@ Future<AppController> readyController({
 }) async {
   SharedPreferences.setMockInitialValues({});
   final preferences = await SharedPreferences.getInstance();
-  final controller = AppController(LocalWorkspaceRepository(preferences));
+  final controller = AppController(
+    LocalWorkspaceRepository(preferences),
+    seedMockContacts: false,
+  );
   await controller.initialize();
   if (onboard) {
     await controller.completeOnboarding(
@@ -57,6 +60,27 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     }
   }
+
+  test('adds mock contacts once, including Brian Halligan', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final controller = AppController(LocalWorkspaceRepository(preferences));
+    await controller.initialize();
+
+    final brian = controller.data.contacts.singleWhere(
+      (contact) => contact.name == 'Brian Halligan',
+    );
+    expect(controller.data.contacts, hasLength(4));
+
+    await controller.deleteContact(brian.id);
+    final reopened = AppController(LocalWorkspaceRepository(preferences));
+    await reopened.initialize();
+    expect(reopened.data.contacts, hasLength(3));
+    expect(
+      reopened.data.contacts.map((contact) => contact.name),
+      isNot(contains('Brian Halligan')),
+    );
+  });
 
   testWidgets('starts with use-case selection and reveals a number', (
     tester,
