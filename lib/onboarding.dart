@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
@@ -444,9 +445,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     return switch (_step) {
       _Step.useCase => _page(
         hero: const BrandMark(size: 120),
-        title: 'Hi, I’m your new AI agent',
-        subtitle:
-            'I answer calls 24/7 so you never miss one. What should I focus on?',
+        heading: const _TypingTitle(),
+        subtitle: 'What should I focus on?',
         children: [
           _OptionTile(
             icon: CupertinoIcons.phone_fill,
@@ -717,7 +717,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   Widget _page({
     Widget? hero,
-    required String title,
+    String? title,
+    Widget? heading,
     required String subtitle,
     required List<Widget> children,
   }) {
@@ -728,16 +729,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         if (hero != null) _Hero(child: hero) else const SizedBox(height: 36),
         _Rise(
           order: 1,
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 24,
-              height: 1.2,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -.3,
-            ),
-          ),
+          child:
+              heading ??
+              Text(title!, textAlign: TextAlign.center, style: _titleStyle),
         ),
         const SizedBox(height: 10),
         _Rise(
@@ -769,6 +763,138 @@ OutlineInputBorder _roundBorder(Color color) => OutlineInputBorder(
 );
 
 /// Fades and lifts its child in, staggered by [order].
+const _titleStyle = TextStyle(
+  fontSize: 24,
+  height: 1.2,
+  fontWeight: FontWeight.w700,
+  letterSpacing: -.3,
+);
+
+/// "Hi, I’m your new AI" with the role typed out, erased, and retyped on its
+/// own line so the heading never reflows. Screen readers hear one sentence.
+class _TypingTitle extends StatefulWidget {
+  const _TypingTitle();
+
+  @override
+  State<_TypingTitle> createState() => _TypingTitleState();
+}
+
+class _TypingTitleState extends State<_TypingTitle>
+    with SingleTickerProviderStateMixin {
+  static const _roles = [
+    'agent',
+    'receptionist',
+    'sales rep',
+    'appointment setter',
+    'lead qualifier',
+  ];
+
+  late final AnimationController _caret = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1000),
+  );
+  final _random = math.Random();
+  Timer? _timer;
+  var _role = 0;
+  var _shown = _roles.first.length;
+  var _deleting = true;
+
+  bool get _reduceMotion => MediaQuery.disableAnimationsOf(context);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_reduceMotion) {
+      _timer?.cancel();
+      _timer = null;
+      _caret.stop();
+      _role = 0;
+      _shown = _roles.first.length;
+      _deleting = true;
+    } else if (_timer == null) {
+      _caret.repeat();
+      _timer = Timer(const Duration(milliseconds: 2200), _tick);
+    }
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    setState(() {
+      if (!_deleting) {
+        _shown++;
+      } else if (--_shown == 0) {
+        _deleting = false;
+        _role = (_role + 1) % _roles.length;
+      }
+    });
+    final full = _shown == _roles[_role].length;
+    if (full) _deleting = true;
+    final ms = full
+        ? 1800
+        : _shown == 0
+        ? 280
+        : _deleting
+        ? 38
+        : 65 + _random.nextInt(60);
+    _timer = Timer(Duration(milliseconds: ms), _tick);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _caret.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final word = _roles[_role];
+    final holding = _shown == word.length;
+    return Semantics(
+      label: 'Hi, I’m your new AI agent',
+      excludeSemantics: true,
+      child: Column(
+        children: [
+          const Text(
+            'Hi, I’m your new AI',
+            textAlign: TextAlign.center,
+            style: _titleStyle,
+          ),
+          SizedBox(
+            height: 31,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ShaderMask(
+                  blendMode: BlendMode.srcIn,
+                  shaderCallback: HubColors.breeze.createShader,
+                  child: Text(word.substring(0, _shown), style: _titleStyle),
+                ),
+                if (!_reduceMotion)
+                  AnimatedBuilder(
+                    animation: _caret,
+                    builder: (context, _) => Opacity(
+                      opacity: !holding || _caret.value < .55 ? 1 : 0,
+                      child: Container(
+                        width: 2.5,
+                        height: 26,
+                        margin: const EdgeInsets.only(left: 3),
+                        decoration: BoxDecoration(
+                          color: HubColors.orange,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Rise extends StatelessWidget {
   const _Rise({required this.order, required this.child});
 
