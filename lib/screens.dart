@@ -10,6 +10,7 @@ import 'number_picker.dart';
 import 'qualification_screen.dart';
 import 'repository.dart';
 import 'theme.dart';
+import 'voice_picker.dart';
 import 'voice_test_sheet.dart';
 import 'widgets.dart';
 
@@ -819,11 +820,13 @@ class _IdentityScreenState extends State<IdentityScreen> {
   late final TextEditingController _description;
   late final TextEditingController _greeting;
   late Friendliness _friendliness;
+  late String _voice;
 
   @override
   void initState() {
     super.initState();
     final agent = widget.controller.data.agent;
+    _voice = agent.voice;
     _name = TextEditingController(text: agent.name);
     _persona = TextEditingController(text: agent.persona);
     _company = TextEditingController(text: agent.companyName);
@@ -851,6 +854,7 @@ class _IdentityScreenState extends State<IdentityScreen> {
       widget.controller.data.agent.copyWith(
         name: _name.text.trim(),
         friendliness: _friendliness,
+        voice: _voice,
         persona: _persona.text.trim(),
         companyName: _company.text.trim(),
         companyDescription: _description.text.trim(),
@@ -904,6 +908,13 @@ class _IdentityScreenState extends State<IdentityScreen> {
                   onSelectionChanged: (value) =>
                       setState(() => _friendliness = value.first),
                 ),
+              ),
+              const SizedBox(height: 16),
+              Text('Voice', style: TextStyle(color: HubColors.textMuted)),
+              const SizedBox(height: 8),
+              VoicePicker(
+                selected: _voice,
+                onChanged: (voice) => setState(() => _voice = voice),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -1587,6 +1598,7 @@ class DeployScreen extends StatelessWidget {
           )
         else
           _LiveNumberCard(agent: agent),
+        const _SmsComingSoonCard(),
       ],
     );
   }
@@ -1603,6 +1615,29 @@ class DeployScreen extends StatelessWidget {
     } on WorkspaceException catch (error) {
       if (context.mounted) showHubMessage(context, error.message);
     }
+  }
+}
+
+class _SmsComingSoonCard extends StatelessWidget {
+  const _SmsComingSoonCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Opacity(
+        opacity: .5,
+        child: HubCard(
+          icon: CupertinoIcons.chat_bubble_text,
+          title: 'SMS',
+          detail: 'text messages',
+          trailing: const HubPill(label: 'Coming soon'),
+          child: Text(
+            'Let your agent reply to texts sent to your number.',
+            style: TextStyle(color: HubColors.textMuted),
+          ),
+        ),
+      ),
+    );
   }
 }
 

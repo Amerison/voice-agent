@@ -197,6 +197,10 @@ class AppController extends ChangeNotifier {
       );
       await _persist();
     });
+    // Twilio compliance holds on the account aren't something users can act on.
+    if (_error?.contains('restricted from provisioning') ?? false) {
+      clearError();
+    }
   }
 
   Future<void> refresh() async {

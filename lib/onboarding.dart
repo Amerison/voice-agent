@@ -12,6 +12,7 @@ import 'models.dart';
 import 'number_picker.dart';
 import 'repository.dart';
 import 'theme.dart';
+import 'voice_picker.dart';
 import 'voice_test_sheet.dart';
 import 'widgets.dart';
 
@@ -74,15 +75,6 @@ enum _Business {
   final String bookingPhrase;
 }
 
-/// Active Vapi voices. Previews are Vapi's published samples
-/// (github.com/VapiAI/docs, MIT), bundled in assets/voices/ by lowercase id.
-const _voices = [
-  (id: 'Elliot', tone: 'Calm, professional'),
-  (id: 'Clara', tone: 'Clear, professional'),
-  (id: 'Savannah', tone: 'Bright, friendly'),
-  (id: 'Kai', tone: 'Relaxed, helpful'),
-];
-
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key, required this.controller});
 
@@ -112,7 +104,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   var _forward = true;
   AgentType? _type;
   var _friendliness = Friendliness.friendly;
-  var _voice = _voices.first.id;
+  var _voice = agentVoices.first.id;
   AudioPlayer? _preview;
   String? _playing;
   _Business? _business;
@@ -139,18 +131,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     );
     _company = TextEditingController(text: agent.companyName);
     _friendliness = agent.friendliness;
-    if (_voices.any((voice) => voice.id == agent.voice)) _voice = agent.voice;
+    if (agentVoices.any((voice) => voice.id == agent.voice)) {
+      _voice = agent.voice;
+    }
     for (final field in [_name, _company, _website, _greeting]) {
       field.addListener(_refresh);
     }
     _lookUpNumber();
   }
-
-  String get _number => formatPhone(
-    widget.controller.isDemo
-        ? _demoNumber
-        : _available ?? '($_areaCode) number',
-  )!;
 
   Future<void> _lookUpNumber() async {
     final areaCode = _areaCode;
@@ -479,9 +467,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
         title: 'How should I sound?',
         subtitle: 'Tap a voice to hear it. You can switch it later.',
         children: [
-          for (final voice in _voices)
+          for (final voice in agentVoices)
             _OptionTile(
-              leading: _VoiceGlyph(
+              leading: VoiceGlyph(
                 animation: _ambient,
                 selected: voice.id == _voice,
                 playing: voice.id == _playing,
@@ -649,7 +637,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           _OptionTile(
             icon: CupertinoIcons.plus_circle_fill,
             title: 'Get a new number',
-            subtitle: _number,
+            subtitle: 'A local ($_areaCode) number just for me',
             selected: !_useExistingNumber,
             onTap: () => setState(() => _useExistingNumber = false),
           ),
@@ -661,13 +649,13 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                     key: const ValueKey('forward'),
                     title: 'What is call forwarding?',
                     body:
-                        'A standard carrier feature that sends calls you don’t pick up to me at $_number. Callers never notice. We’ll set it up together when you go live.',
+                        'A standard carrier feature that sends calls you don’t pick up to me. Callers never notice. We’ll set it up together when you go live.',
                   )
                 : _InfoCard(
                     key: const ValueKey('new'),
                     title: 'Your new number',
                     body:
-                        '$_number becomes yours when you finish setup, and I answer it right away. You can port your own number later.',
+                        'I’ll get you a number when you finish setup and answer it right away. You can port your own number later.',
                   ),
           ),
           Center(
@@ -1302,56 +1290,6 @@ class _Check extends StatelessWidget {
           CupertinoIcons.checkmark,
           size: 14,
           color: HubColors.background,
-        ),
-      ),
-    );
-  }
-}
-
-class _VoiceGlyph extends StatelessWidget {
-  const _VoiceGlyph({
-    required this.animation,
-    required this.selected,
-    required this.playing,
-  });
-
-  final Animation<double> animation;
-  final bool selected;
-  final bool playing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 38,
-      height: 38,
-      decoration: BoxDecoration(
-        color: selected ? HubColors.orange : HubColors.background,
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (context, _) => Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var bar = 0; bar < 4; bar++)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: 3,
-                height: playing
-                    ? 7 +
-                          (math.sin(
-                                    animation.value * math.pi * 24 + bar * 1.3,
-                                  ) +
-                                  1) *
-                              6
-                    : const [8.0, 14.0, 10.0, 6.0][bar],
-                margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                decoration: BoxDecoration(
-                  color: selected ? Colors.white : HubColors.textMuted,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-          ],
         ),
       ),
     );
