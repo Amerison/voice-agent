@@ -19,7 +19,11 @@ abstract class WorkspaceRepository {
 
   Future<WorkspaceData> provisionNumber(WorkspaceData data, String areaCode);
 
+  /// Pulls the latest calls; in live mode they come from Vapi.
   Future<WorkspaceData> refresh(WorkspaceData data);
+
+  /// The Vapi account's phone number, the app's single source of truth.
+  Future<String?> accountNumber();
 }
 
 Future<WorkspaceRepository> createRepository() async {
@@ -89,6 +93,9 @@ class LocalWorkspaceRepository implements WorkspaceRepository {
     await save(updated);
     return updated;
   }
+
+  @override
+  Future<String?> accountNumber() async => null;
 
   @override
   Future<WorkspaceData> refresh(WorkspaceData data) async {
@@ -164,7 +171,19 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
   }
 
   @override
-  Future<WorkspaceData> refresh(WorkspaceData data) => load();
+  Future<WorkspaceData> refresh(WorkspaceData data) =>
+      _postWorkspace('/v1/calls/refresh', data);
+
+  @override
+  Future<String?> accountNumber() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/v1/vapi/number'),
+      headers: _headers,
+    );
+    _ensureSuccess(response);
+    return (jsonDecode(response.body) as Map<String, dynamic>)['number']
+        as String?;
+  }
 
   Future<WorkspaceData> _postWorkspace(String path, WorkspaceData data) async {
     final response = await http.post(
@@ -208,7 +227,7 @@ WorkspaceData emptyWorkspace() {
     onboardingComplete: false,
     agent: const AgentConfig(
       id: 'lead-agent',
-      type: AgentType.leadQualification,
+      type: AgentType.receptionist,
       name: '',
       friendliness: Friendliness.friendly,
       persona: '',

@@ -26,6 +26,16 @@ class AppController extends ChangeNotifier {
     final preferences = await SharedPreferences.getInstance();
     _darkMode = preferences.getBool(_darkModeKey) ?? true;
     await _run(() async => _data = await repository.load());
+    if (!isDemo && isReady && data.onboardingComplete) await refresh();
+  }
+
+  /// Null in demo mode or when the server can't reach Vapi.
+  Future<String?> accountNumber() async {
+    try {
+      return await repository.accountNumber();
+    } on Object {
+      return null;
+    }
   }
 
   Future<void> setDarkMode(bool value) async {
