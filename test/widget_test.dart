@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:voice_agent/app.dart';
 import 'package:voice_agent/app_controller.dart';
@@ -318,6 +319,23 @@ void main() {
     expect(find.text('New number'), findsNothing);
     expect(controller.data.agent.phoneNumber, '+15105550142');
     expect(find.text('(510) 555-0142'), findsWidgets);
+
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      },
+    );
+    await tester.ensureVisible(find.text('Copy'));
+    await tester.tap(find.text('Copy'));
+    await tester.pump();
+
+    expect(copied, '+1 (510) 555-0142');
+    expect(find.text('(510) 555-0142 copied'), findsOneWidget);
   });
 
   testWidgets('changes and persists the appearance from Settings', (

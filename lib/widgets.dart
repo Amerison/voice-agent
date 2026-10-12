@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 import 'theme.dart';
 
@@ -412,13 +413,16 @@ class _HaloPainter extends CustomPainter {
   final ValueListenable<double> clock;
   final int seed;
 
-  /// Painted back to front, so the peach puff reads as the brightest core.
-  static const _puffs = [
+  static const _palette = [
     HubColors.magenta,
     Color(0xFFC23F51),
     HubColors.orange,
     Color(0xFFF7A27C),
   ];
+
+  /// Wisps alive at once. Their life cycles are staggered so one is always
+  /// emerging while another fades out.
+  static const _wisps = 8;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -426,45 +430,88 @@ class _HaloPainter extends CustomPainter {
     final center = size.center(Offset.zero);
     final radius = size.shortestSide * .3;
     final layer = Rect.fromCircle(center: center, radius: radius * 3.6);
+    final sway =
+        Offset(drift(t * .25, seed + 1), drift(t * .25, seed + 2)) *
+        radius *
+        .12;
 
     canvas
       ..saveLayer(layer, Paint())
       ..drawPath(
-        _cloud(center, radius * 1.05, t, seed),
+        _cloud(center + sway, radius * 1.1, t, seed, wobble: .3),
         Paint()
-          ..color = HubColors.magenta.withValues(alpha: .22)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * .55),
+          ..color = HubColors.magenta.withValues(alpha: .2)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * .5),
       );
-    for (final (i, color) in _puffs.indexed) {
-      final puffSeed = seed + 37 * (i + 1);
-      final offset =
-          Offset(drift(t * .16, puffSeed), drift(t * .16, puffSeed + 7)) *
-          radius *
-          .45;
-      final scale = .52 + .12 * drift(t * .2, puffSeed + 13);
-      canvas.drawPath(
-        _cloud(center + offset, radius * scale, t, puffSeed),
-        Paint()
-          ..color = color.withValues(alpha: .38)
-          ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * .24),
-      );
+    for (var i = 0; i < _wisps; i++) {
+      _wisp(canvas, center, radius, t, i);
     }
-    _grain(canvas, Rect.fromCircle(center: center, radius: radius * 2), t);
+    _hollow(canvas, center - sway * .5, radius * .65);
+    _grain(canvas, Rect.fromCircle(center: center, radius: radius * 2.2), t);
     canvas.restore();
   }
 
-  /// A blob whose lobes swell, shrink, and slide independently over time.
-  Path _cloud(Offset center, double radius, double t, int seed) {
+  /// One puff of mist: born small near the middle, it swells as it curls
+  /// outward along a wavy path, then fades and is reborn elsewhere.
+  void _wisp(Canvas canvas, Offset center, double radius, double t, int i) {
+    final wispSeed = seed + 53 * (i + 1);
+    final period = 4.5 + 1.0 * (_hash(i.toDouble(), seed) + 1);
+    final age = (t / period + i / _wisps) % 1;
+    final heading = 2 * math.pi * i / _wisps + 1.4 * drift(t * .15, wispSeed);
+    final curl = 1.1 * drift(t * .4 + age * 2, wispSeed + 5) * age;
+    final direction = heading + curl;
+    final position =
+        center +
+        Offset(math.cos(direction), math.sin(direction)) *
+            radius *
+            (.1 + 1.15 * age);
+    final size = radius * (.25 + .6 * age);
+    final alpha = .58 * math.pow(math.sin(math.pi * age), 1.2);
+    canvas.drawPath(
+      _cloud(position, size, t, wispSeed, wobble: .32),
+      Paint()
+        ..color = _palette[i % _palette.length].withValues(alpha: alpha)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size * .5),
+    );
+  }
+
+  /// Thins the middle out so the mist reads as rising vapor, not a solid
+  /// core.
+  void _hollow(Canvas canvas, Offset center, double radius) {
+    final bounds = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..blendMode = BlendMode.dstOut
+        ..shader = RadialGradient(
+          colors: [
+            Colors.black.withValues(alpha: .38),
+            Colors.black.withValues(alpha: 0),
+          ],
+        ).createShader(bounds),
+    );
+  }
+
+  /// A lopsided blob whose lobes swell, shrink, and slide like jello.
+  /// [wobble] sets how far it strays from a circle.
+  Path _cloud(
+    Offset center,
+    double radius,
+    double t,
+    int seed, {
+    required double wobble,
+  }) {
     const steps = 72;
     final lobes = [
-      for (var k = 2; k <= 4; k++)
+      for (var k = 2; k <= 5; k++)
         (
           k: k,
-          amp: .09 / k * drift(t * .13, seed + 19 * k),
-          phase: 3 * drift(t * .06, seed + 23 * k),
+          amp: wobble / k * drift(t * .35, seed + 19 * k),
+          phase: 3 * drift(t * .18, seed + 23 * k),
         ),
     ];
-    final stretch = .05 * drift(t * .12, seed + 3);
+    final stretch = .14 * drift(t * .3, seed + 3);
     final path = Path();
     for (var i = 0; i <= steps; i++) {
       final angle = i / steps * 2 * math.pi;
@@ -998,6 +1045,17 @@ String? formatPhone(String? number) {
   final match = RegExp(r'^\+1(\d{3})(\d{3})(\d{4})$').firstMatch(number);
   if (match == null) return number;
   return '(${match[1]}) ${match[2]}-${match[3]}';
+}
+
+/// Copies [number] as +1 (628) 257-1287, which reads well when pasted and
+/// still dials from anywhere.
+Future<void> copyPhoneNumber(BuildContext context, String number) async {
+  final national = formatPhone(number)!;
+  await Clipboard.setData(
+    ClipboardData(text: national == number ? number : '+1 $national'),
+  );
+  HapticFeedback.selectionClick();
+  if (context.mounted) showHubMessage(context, '$national copied');
 }
 
 void showHubMessage(BuildContext context, String message) {

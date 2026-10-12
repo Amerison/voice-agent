@@ -920,20 +920,20 @@ class _HeroState extends State<_Hero>
                         for (final blob in blobs)
                           Align(
                             alignment: Alignment(
-                              drift(t * .09, blob.seed) * .28,
-                              drift(t * .09, blob.seed + 5) * .22 - .05,
+                              drift(t * .2, blob.seed) * .5,
+                              drift(t * .2, blob.seed + 5) * .35 - .05,
                             ),
                             child: Container(
                               width:
                                   blob.size *
-                                  (1 + .12 * drift(t * .1, blob.seed + 9)),
+                                  (1 + .25 * drift(t * .3, blob.seed + 9)),
                               height:
                                   blob.size *
-                                  (1 + .12 * drift(t * .1, blob.seed + 9)),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
+                                  (1 + .25 * drift(t * .3, blob.seed + 11)),
+                              decoration: ShapeDecoration(
+                                shape: const OvalBorder(),
                                 color: blob.color.withValues(
-                                  alpha: dark ? .28 : .18,
+                                  alpha: dark ? .24 : .16,
                                 ),
                               ),
                             ),

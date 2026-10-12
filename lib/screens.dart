@@ -358,10 +358,27 @@ class _DrawerAccount extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
           ),
-          Text(
-            formatPhone(agent.phoneNumber ?? agent.reservedNumber) ??
-                'No phone number yet',
-            style: TextStyle(color: HubColors.textMuted),
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  formatPhone(agent.phoneNumber ?? agent.reservedNumber) ??
+                      'No phone number yet',
+                  style: TextStyle(color: HubColors.textMuted),
+                ),
+              ),
+              if (agent.phoneNumber case final number?)
+                IconButton(
+                  tooltip: 'Copy number',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => copyPhoneNumber(context, number),
+                  icon: Icon(
+                    CupertinoIcons.doc_on_doc,
+                    size: 16,
+                    color: HubColors.textMuted,
+                  ),
+                ),
+            ],
           ),
         ],
       ),
@@ -1496,6 +1513,10 @@ class _LiveNumberCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final style = OutlinedButton.styleFrom(
+      foregroundColor: Colors.white,
+      side: const BorderSide(color: Colors.white70),
+    );
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -1527,15 +1548,24 @@ class _LiveNumberCard extends StatelessWidget {
             style: const TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 18),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: const BorderSide(color: Colors.white70),
-            ),
-            onPressed: () =>
-                launchUrl(Uri(scheme: 'tel', path: agent.phoneNumber)),
-            icon: const Icon(CupertinoIcons.phone, size: 18),
-            label: const Text('Call agent'),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                style: style,
+                onPressed: () =>
+                    launchUrl(Uri(scheme: 'tel', path: agent.phoneNumber)),
+                icon: const Icon(CupertinoIcons.phone, size: 18),
+                label: const Text('Call agent'),
+              ),
+              OutlinedButton.icon(
+                style: style,
+                onPressed: () => copyPhoneNumber(context, agent.phoneNumber!),
+                icon: const Icon(CupertinoIcons.doc_on_doc, size: 18),
+                label: const Text('Copy'),
+              ),
+            ],
           ),
         ],
       ),
