@@ -1053,12 +1053,16 @@ class _TrainScreenState extends State<TrainScreen> {
               _ActionTile(
                 icon: CupertinoIcons.calendar,
                 title: 'Book a meeting',
-                subtitle: 'Offer mock availability and create a meeting.',
+                subtitle: agent.calendarConnected
+                    ? 'Offer open times and add meetings to Google Calendar.'
+                    : 'Offer times and save meetings in the app.',
                 value: agent.bookMeetingEnabled,
                 onChanged: (value) => controller.updateAgent(
                   agent.copyWith(bookMeetingEnabled: value),
                 ),
               ),
+              if (agent.bookMeetingEnabled)
+                _GoogleCalendarRow(controller: controller),
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 6),
                 child: Divider(),
@@ -1197,6 +1201,63 @@ class _ActionTile extends StatelessWidget {
         Switch(value: value, onChanged: onChanged),
       ],
     );
+  }
+}
+
+class _GoogleCalendarRow extends StatelessWidget {
+  const _GoogleCalendarRow({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final agent = controller.data.agent;
+    final connected = agent.calendarConnected;
+    return Padding(
+      padding: const EdgeInsets.only(left: 52, top: 4),
+      child: Row(
+        children: [
+          Icon(
+            connected
+                ? CupertinoIcons.checkmark_circle_fill
+                : CupertinoIcons.circle,
+            size: 16,
+            color: connected ? HubColors.success : HubColors.textMuted,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              connected
+                  ? agent.calendarEmail ?? 'Google Calendar connected'
+                  : 'Google Calendar not connected',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: HubColors.textMuted, fontSize: 14),
+            ),
+          ),
+          TextButton(
+            onPressed: controller.isBusy ? null : () => _toggle(context),
+            child: Text(
+              connected
+                  ? 'Disconnect'
+                  : controller.isConnectingCalendar
+                  ? 'Waiting…'
+                  : 'Connect',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggle(BuildContext context) async {
+    if (controller.data.agent.calendarConnected) {
+      await controller.disconnectGoogleCalendar();
+      return;
+    }
+    if (await controller.connectGoogleCalendar() && context.mounted) {
+      showHubMessage(context, 'Google Calendar connected.');
+    }
   }
 }
 

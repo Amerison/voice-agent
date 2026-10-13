@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' show ClientException;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'mock_contacts.dart';
 import 'models.dart';
@@ -20,10 +21,16 @@ class AppController extends ChangeNotifier {
   bool _busy = false;
   bool _darkMode = true;
   String? _error;
+  var _calendarAttempt = 0;
+  bool _connectingCalendar = false;
 
   WorkspaceData get data => _data!;
   bool get isReady => _data != null;
   bool get isBusy => _busy;
+
+  /// True while Google's consent page is open and the server hasn't
+  /// received the grant yet.
+  bool get isConnectingCalendar => _connectingCalendar;
   bool get isDemo => repository.isDemo;
   bool get isDarkMode => _darkMode;
   String? get error => _error;
@@ -201,6 +208,69 @@ class AppController extends ChangeNotifier {
     if (_error?.contains('restricted from provisioning') ?? false) {
       clearError();
     }
+  }
+
+  /// Opens Google's consent page in an in-app browser and waits for the
+  /// server to receive the grant, so "Book a meeting" adds events to the
+  /// owner's Google Calendar. Calling again restarts the wait. Returns
+  /// whether the calendar ended up connected.
+  Future<bool> connectGoogleCalendar() async {
+    final attempt = ++_calendarAttempt;
+    _error = null;
+    try {
+      var status = await repository.googleCalendarStatus();
+      final consent = status.connected
+          ? null
+          : await repository.googleCalendarConsentUrl();
+      if (consent != null) {
+        _connectingCalendar = true;
+        notifyListeners();
+        if (!await launchUrl(consent, mode: LaunchMode.inAppBrowserView)) {
+          throw const WorkspaceException('Couldn’t open Google sign-in.');
+        }
+        final deadline = DateTime.now().add(const Duration(minutes: 5));
+        while (!status.connected) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+          if (attempt != _calendarAttempt) return false;
+          if (DateTime.now().isAfter(deadline)) return false;
+          try {
+            status = await repository.googleCalendarStatus();
+          } on Object {
+            // A dropped poll shouldn't end the wait; the next one retries.
+          }
+        }
+        unawaited(closeInAppWebView().catchError((_) {}));
+      }
+      _data = data.copyWith(
+        agent: data.agent.copyWith(
+          calendarConnected: true,
+          calendarEmail: status.email,
+        ),
+      );
+      await _persist();
+      return true;
+    } on Object catch (exception) {
+      _error = _message(exception);
+      return false;
+    } finally {
+      if (attempt == _calendarAttempt) _connectingCalendar = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> disconnectGoogleCalendar() async {
+    _calendarAttempt++;
+    _connectingCalendar = false;
+    await _run(() async {
+      await repository.disconnectGoogleCalendar();
+      _data = data.copyWith(
+        agent: data.agent.copyWith(
+          calendarConnected: false,
+          clearCalendarEmail: true,
+        ),
+      );
+      await _persist();
+    });
   }
 
   Future<void> refresh() async {

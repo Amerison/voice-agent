@@ -245,6 +245,7 @@ class AgentConfig {
     required this.syncStatus,
     this.voice = 'Elliot',
     this.calendarConnected = false,
+    this.calendarEmail,
     this.reservedNumber,
     this.phoneNumber,
     this.vapiAssistantId,
@@ -276,6 +277,9 @@ class AgentConfig {
   final String voice;
   final bool calendarConnected;
 
+  /// The Google account meetings are booked on, once connected.
+  final String? calendarEmail;
+
   /// Mock number shown during onboarding until a real one is provisioned.
   final String? reservedNumber;
   final String? phoneNumber;
@@ -302,6 +306,7 @@ class AgentConfig {
     SyncStatus? syncStatus,
     String? voice,
     bool? calendarConnected,
+    String? calendarEmail,
     String? reservedNumber,
     String? phoneNumber,
     String? vapiAssistantId,
@@ -310,6 +315,7 @@ class AgentConfig {
     DateTime? lastSyncedAt,
     String? syncError,
     bool clearSyncError = false,
+    bool clearCalendarEmail = false,
   }) => AgentConfig(
     id: id,
     type: type ?? this.type,
@@ -328,6 +334,9 @@ class AgentConfig {
     syncStatus: syncStatus ?? this.syncStatus,
     voice: voice ?? this.voice,
     calendarConnected: calendarConnected ?? this.calendarConnected,
+    calendarEmail: clearCalendarEmail
+        ? null
+        : calendarEmail ?? this.calendarEmail,
     reservedNumber: reservedNumber ?? this.reservedNumber,
     phoneNumber: phoneNumber ?? this.phoneNumber,
     vapiAssistantId: vapiAssistantId ?? this.vapiAssistantId,
@@ -356,6 +365,7 @@ class AgentConfig {
     'syncStatus': syncStatus.name,
     'voice': voice,
     'calendarConnected': calendarConnected,
+    'calendarEmail': calendarEmail,
     'reservedNumber': reservedNumber,
     'phoneNumber': phoneNumber,
     'vapiAssistantId': vapiAssistantId,
@@ -393,6 +403,7 @@ class AgentConfig {
     ),
     voice: _activeVoice(json['voice'] as String?),
     calendarConnected: json['calendarConnected'] as bool? ?? false,
+    calendarEmail: json['calendarEmail'] as String?,
     reservedNumber: json['reservedNumber'] as String?,
     phoneNumber: json['phoneNumber'] as String?,
     vapiAssistantId: json['vapiAssistantId'] as String?,

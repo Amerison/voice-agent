@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
+import 'package:voice_agent_server/google_calendar.dart';
 import 'package:voice_agent_server/inbox.dart';
 import 'package:voice_agent_server/prompt_builder.dart';
 import 'package:voice_agent_server/store.dart';
@@ -46,12 +47,33 @@ Future<void> main() async {
     return;
   }
 
+  final googleClientId = Platform.environment['GOOGLE_CLIENT_ID']?.trim() ?? '';
+  final googleClientSecret =
+      Platform.environment['GOOGLE_CLIENT_SECRET']?.trim() ?? '';
+  final google =
+      googleClientId.isEmpty ||
+          googleClientSecret.isEmpty ||
+          publicBaseUrl.isEmpty
+      ? null
+      : GoogleCalendarClient(
+          clientId: googleClientId,
+          clientSecret: googleClientSecret,
+          redirectUri: '$publicBaseUrl/v1/google/callback',
+        );
+  if (google == null) {
+    stderr.writeln(
+      'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, or PUBLIC_BASE_URL is missing, '
+      'so meetings stay in the app instead of Google Calendar.',
+    );
+  }
+
   final store = FileStore(dataPath);
   await store.initialize();
   final api = ApiServer(
     store: store,
     vapi: VapiClient(privateKey: privateKey),
     twilio: twilio,
+    google: google,
     existingNumber: existingNumber,
     publicBaseUrl: publicBaseUrl,
   );
@@ -72,6 +94,7 @@ class ApiServer {
     required this.vapi,
     required this.publicBaseUrl,
     this.twilio,
+    this.google,
     this.existingNumber = '',
   }) {
     router
@@ -81,6 +104,10 @@ class ApiServer {
       ..get('/v1/numbers/available', _availableNumber)
       ..post('/v1/agent/provision-number', _provisionNumber)
       ..post('/v1/calls/refresh', _refreshCalls)
+      ..post('/v1/google/connect', _connectGoogle)
+      ..get('/v1/google/callback', _googleCallback)
+      ..get('/v1/google/status', _googleStatus)
+      ..post('/v1/google/disconnect', _disconnectGoogle)
       ..post('/v1/vapi/webhook/<routeId>', _vapiWebhook)
       ..options('/<ignored|.*>', (_) => Response.ok(''));
   }
@@ -88,6 +115,13 @@ class ApiServer {
   final FileStore store;
   final VapiClient vapi;
   final TwilioClient? twilio;
+
+  /// Null when Google OAuth isn't configured; meetings then stay in the app.
+  final GoogleCalendarClient? google;
+
+  /// One-time `state` values for consent redirects in flight, mapped to the
+  /// workspace that started them.
+  final _consents = <String, ({String workspaceKey, DateTime expiresAt})>{};
 
   /// A Twilio number to share instead of buying one per workspace, for trial
   /// accounts, which can hold only one number. Empty to buy numbers.
@@ -99,6 +133,7 @@ class ApiServer {
     'ok': true,
     'vapiConfigured': true,
     'twilioConfigured': twilio != null,
+    'googleCalendarConfigured': google != null,
     'publicUrlConfigured': publicBaseUrl.isNotEmpty,
   });
 
@@ -291,6 +326,126 @@ class ApiServer {
     }
   }
 
+  /// Returns Google's consent page for the app to open. Google redirects back
+  /// to [_googleCallback], which saves the grant for this workspace.
+  Future<Response> _connectGoogle(Request request) async {
+    try {
+      final key = _workspaceKey(request);
+      final google = _requireGoogle();
+      final now = DateTime.now();
+      _consents.removeWhere((_, consent) => consent.expiresAt.isBefore(now));
+      final state = _randomToken();
+      _consents[state] = (
+        workspaceKey: key,
+        expiresAt: now.add(const Duration(minutes: 10)),
+      );
+      return _json(200, {'url': google.consentUrl(state).toString()});
+    } on ApiException catch (error) {
+      return _json(error.statusCode, {'error': error.message});
+    }
+  }
+
+  /// Google's redirect after consent. Shown in the in-app browser, so it
+  /// answers with a page rather than JSON.
+  Future<Response> _googleCallback(Request request) async {
+    final query = request.url.queryParameters;
+    final consent = _consents.remove(query['state']);
+    final google = this.google;
+    if (consent == null ||
+        google == null ||
+        consent.expiresAt.isBefore(DateTime.now())) {
+      return _page(
+        400,
+        'This link expired',
+        'Go back to the app and tap Connect Google Calendar again.',
+      );
+    }
+    final code = query['code'];
+    if (code == null) {
+      return _page(
+        400,
+        'Google Calendar wasn’t connected',
+        'Access wasn’t granted. Go back to the app to try again.',
+      );
+    }
+    try {
+      final grant = await google.exchangeCode(code);
+      await store.saveCalendar(consent.workspaceKey, {
+        'refreshToken': grant.refreshToken,
+        'email': grant.email,
+        'connectedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+      return _page(
+        200,
+        'Google Calendar connected',
+        'Meetings your agent books will appear on '
+            '${grant.email ?? 'your calendar'}. You can return to the app.',
+      );
+    } on GoogleCalendarException catch (error) {
+      return _page(400, 'Google Calendar wasn’t connected', error.message);
+    }
+  }
+
+  Future<Response> _googleStatus(Request request) async {
+    try {
+      final calendar = store.calendar(_workspaceKey(request));
+      return _json(200, {
+        'configured': google != null,
+        'connected': calendar != null,
+        'email': calendar?['email'],
+      });
+    } on ApiException catch (error) {
+      return _json(error.statusCode, {'error': error.message});
+    }
+  }
+
+  Future<Response> _disconnectGoogle(Request request) async {
+    try {
+      final key = _workspaceKey(request);
+      final calendar = store.calendar(key);
+      if (calendar != null) {
+        await store.removeCalendar(key);
+        try {
+          await google?.revoke(calendar['refreshToken'] as String);
+        } on Object catch (error) {
+          stderr.writeln('Couldn’t revoke Google access: $error');
+        }
+      }
+      return _json(200, {'connected': false});
+    } on ApiException catch (error) {
+      return _json(error.statusCode, {'error': error.message});
+    }
+  }
+
+  GoogleCalendarClient _requireGoogle() {
+    final google = this.google;
+    if (google == null) {
+      throw const ApiException(
+        503,
+        'Google Calendar isn’t set up on the server yet. Add '
+        'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then restart it.',
+      );
+    }
+    return google;
+  }
+
+  /// Runs [use] with the workspace's Google grant, which must exist. A revoked
+  /// grant is forgotten so the app shows the calendar as disconnected.
+  Future<T> _withCalendar<T>(
+    String workspaceKey,
+    Future<T> Function(GoogleCalendarClient google, String refreshToken) use,
+  ) async {
+    final google = _requireGoogle();
+    final refreshToken =
+        store.calendar(workspaceKey)!['refreshToken'] as String;
+    try {
+      return await use(google, refreshToken);
+    } on GoogleCalendarException catch (error) {
+      if (error.revoked) await store.removeCalendar(workspaceKey);
+      rethrow;
+    }
+  }
+
   Future<Response> _vapiWebhook(Request request, String routeId) async {
     final integration = store.integration(routeId);
     if (integration == null) return _json(404, {'error': 'Unknown webhook.'});
@@ -354,6 +509,9 @@ class ApiServer {
       return value.isEmpty ? null : value;
     }
 
+    final workspaceKey = store.integration(routeId)!['workspaceKey'] as String;
+    final calendarConnected = store.calendar(workspaceKey) != null;
+
     switch (name) {
       case 'create_contact':
         final contactName = _requiredString(arguments, 'name');
@@ -384,7 +542,28 @@ class ApiServer {
           'message': 'Contact saved.',
         };
       case 'get_meeting_slots':
-        return {'timezone': 'America/Los_Angeles', 'slots': _meetingSlots()};
+        final candidates = _candidateSlots();
+        final busy = calendarConnected
+            ? await _withCalendar(
+                workspaceKey,
+                (google, token) => google.busy(
+                  token,
+                  candidates.first,
+                  candidates.last.add(_meetingLength),
+                ),
+              )
+            : const <({DateTime start, DateTime end})>[];
+        final free = candidates.where(
+          (start) => !busy.any(
+            (range) =>
+                start.isBefore(range.end) &&
+                start.add(_meetingLength).isAfter(range.start),
+          ),
+        );
+        return {
+          'timezone': 'America/Los_Angeles',
+          'slots': [for (final slot in free.take(6)) slot.toIso8601String()],
+        };
       case 'book_meeting':
         final contactName = _requiredString(arguments, 'contactName');
         final startsAt = DateTime.tryParse(
@@ -393,6 +572,24 @@ class ApiServer {
         if (startsAt == null) {
           throw const ApiException(400, 'Invalid meeting time.');
         }
+        // Booked on Google first: if that fails, nothing is recorded and the
+        // agent can't tell the caller it worked.
+        final event = calendarConnected
+            ? await _withCalendar(
+                workspaceKey,
+                (google, token) => google.createEvent(
+                  token,
+                  summary: 'Meeting with $contactName',
+                  description: [
+                    'Booked by your AI agent during a phone call.',
+                    if (optional('phone') case final phone?) 'Phone: $phone',
+                    if (optional('email') case final email?) 'Email: $email',
+                  ].join('\n'),
+                  start: startsAt,
+                  end: startsAt.add(_meetingLength),
+                ),
+              )
+            : null;
         var contactId = optional('contactId');
         if (contactId == null) {
           // Only contacts from calls are visible here; the app matches this
@@ -428,12 +625,16 @@ class ApiServer {
           'contactName': contactName,
           'startsAt': startsAt.toUtc().toIso8601String(),
           'status': 'Scheduled',
+          'googleEventId': ?event?['id'],
+          'calendarLink': ?event?['htmlLink'],
         });
         await store.recordAction(routeId, callId, 'Booked meeting');
         return {
           'success': true,
           'startsAt': startsAt.toIso8601String(),
-          'message': 'Meeting booked.',
+          'message': event == null
+              ? 'Meeting booked.'
+              : 'Meeting booked and added to the calendar.',
         };
       default:
         throw ApiException(400, 'Unknown tool: $name');
@@ -454,6 +655,13 @@ class ApiServer {
       _validateWorkspace(workspace);
       final cursor = (body['inboxCursor'] as num?)?.toInt() ?? 0;
       final agent = _object(workspace['agent']);
+      // The server holds the grant, so it decides; this also catches access
+      // revoked from the Google account.
+      final calendar = store.calendar(key);
+      agent
+        ..['calendarConnected'] = calendar != null
+        ..['calendarEmail'] = calendar?['email'];
+      workspace['agent'] = agent;
       final assistantId = agent['vapiAssistantId'] as String?;
       if (assistantId == null || assistantId.isEmpty) {
         return _json(200, {'workspace': workspace, 'inboxCursor': cursor});
@@ -960,18 +1168,20 @@ class ApiServer {
         .toList();
   }
 
-  List<String> _meetingSlots() {
-    final slots = <String>[];
+  static const _meetingLength = Duration(minutes: 30);
+
+  /// Weekday business-hours starts over the next five weekdays, in order.
+  /// The UTC hours are 9 or 10 a.m. through 3 or 4 p.m. Pacific, depending on
+  /// daylight saving time.
+  List<DateTime> _candidateSlots() {
+    final slots = <DateTime>[];
     var day = DateTime.now().toUtc().add(const Duration(days: 1));
-    while (slots.length < 4) {
+    for (var weekdays = 0; weekdays < 5;) {
       if (day.weekday <= DateTime.friday) {
-        slots
-          ..add(
-            DateTime.utc(day.year, day.month, day.day, 18).toIso8601String(),
-          )
-          ..add(
-            DateTime.utc(day.year, day.month, day.day, 22).toIso8601String(),
-          );
+        weekdays++;
+        for (final hour in const [17, 18, 19, 21, 22, 23]) {
+          slots.add(DateTime.utc(day.year, day.month, day.day, hour));
+        }
       }
       day = day.add(const Duration(days: 1));
     }
@@ -1031,6 +1241,39 @@ Response _json(int statusCode, Map<String, dynamic> body) => Response(
   body: jsonEncode(body),
   headers: {'Content-Type': 'application/json; charset=utf-8'},
 );
+
+Response _page(int statusCode, String title, String message) {
+  final escape = const HtmlEscape();
+  return Response(
+    statusCode,
+    body:
+        '''
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escape.convert(title)}</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font: 17px -apple-system, system-ui, sans-serif; background: #111; color: #f5f5f5; }
+  main { max-width: 340px; padding: 24px; text-align: center; }
+  h1 { font-size: 24px; margin: 0 0 12px; }
+  p { color: #b3b3b3; line-height: 1.45; margin: 0; }
+</style>
+</head>
+<body><main><h1>${escape.convert(title)}</h1><p>${escape.convert(message)}</p></main></body>
+</html>''',
+    headers: {'Content-Type': 'text/html; charset=utf-8'},
+  );
+}
+
+String _randomToken() {
+  final random = math.Random.secure();
+  return base64UrlEncode(
+    List<int>.generate(24, (_) => random.nextInt(256)),
+  ).replaceAll('=', '');
+}
 
 Map<String, dynamic> _object(dynamic value) {
   if (value is Map<String, dynamic>) return value;

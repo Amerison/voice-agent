@@ -43,6 +43,15 @@ abstract class WorkspaceRepository {
   /// A number in [areaCode] that onboarding can show before it's bought, in
   /// E.164 form. Null in demo mode.
   Future<String?> availableNumber(String areaCode);
+
+  /// Google's consent page for connecting the owner's calendar. Null in demo
+  /// mode, where the calendar connects without leaving the app.
+  Future<Uri?> googleCalendarConsentUrl();
+
+  /// Whether the server holds a Google Calendar grant, and for which account.
+  Future<({bool connected, String? email})> googleCalendarStatus();
+
+  Future<void> disconnectGoogleCalendar();
 }
 
 WorkspaceData? _readWorkspace(SharedPreferences preferences, String key) {
@@ -121,6 +130,16 @@ class LocalWorkspaceRepository implements WorkspaceRepository {
 
   @override
   Future<String?> availableNumber(String areaCode) async => null;
+
+  @override
+  Future<Uri?> googleCalendarConsentUrl() async => null;
+
+  @override
+  Future<({bool connected, String? email})> googleCalendarStatus() async =>
+      (connected: true, email: null);
+
+  @override
+  Future<void> disconnectGoogleCalendar() async {}
 
   @override
   Future<WorkspaceData> refresh(WorkspaceData data) async {
@@ -224,6 +243,29 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
     _ensureSuccess(response);
     return (jsonDecode(response.body) as Map<String, dynamic>)['number']
         as String?;
+  }
+
+  @override
+  Future<Uri?> googleCalendarConsentUrl() async =>
+      Uri.parse((await _post('/v1/google/connect', {}))['url'] as String);
+
+  @override
+  Future<({bool connected, String? email})> googleCalendarStatus() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/v1/google/status'),
+      headers: _headers,
+    );
+    _ensureSuccess(response);
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    return (
+      connected: body['connected'] as bool? ?? false,
+      email: body['email'] as String?,
+    );
+  }
+
+  @override
+  Future<void> disconnectGoogleCalendar() async {
+    await _post('/v1/google/disconnect', {});
   }
 
   Future<Map<String, dynamic>> _post(

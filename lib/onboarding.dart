@@ -277,10 +277,19 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     _advanceFrom(_Step.website, const Duration(milliseconds: 900));
   }
 
-  // ponytail: records the choice only. Real booking needs Google OAuth
-  // (calendar.events scope) on the server to replace its mock meeting slots.
-  void _connectCalendar() {
+  Future<void> _connectCalendar() async {
     HapticFeedback.mediumImpact();
+    final controller = widget.controller;
+    final connected = await controller.connectGoogleCalendar();
+    if (!mounted) return;
+    if (!connected) {
+      final error = controller.error;
+      if (error != null) {
+        controller.clearError();
+        showHubMessage(context, error);
+      }
+      return;
+    }
     setState(() => _calendarConnected = true);
     _advanceFrom(_Step.calendar, const Duration(milliseconds: 1100));
   }
@@ -328,7 +337,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       ),
       _Step.website => next(true),
       _Step.calendar when !_calendarConnected => (
-        label: 'Connect Google Calendar',
+        label: widget.controller.isConnectingCalendar
+            ? 'Waiting for Google…'
+            : 'Connect Google Calendar',
         onTap: _connectCalendar,
         call: false,
       ),
@@ -539,7 +550,10 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           ),
           _Confirmation(
             visible: _calendarConnected,
-            label: 'Google Calendar connected',
+            label: switch (widget.controller.data.agent.calendarEmail) {
+              final email? => 'Connected to $email',
+              null => 'Google Calendar connected',
+            },
           ),
         ],
       ),

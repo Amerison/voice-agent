@@ -61,7 +61,7 @@ void showCallSheet(BuildContext context, CallRecord call) {
                       runSpacing: 8,
                       children: [
                         for (final action in call.actions)
-                          HubPill(label: action, tone: PillTone.accent),
+                          HubPill(label: action, tone: PillTone.outline),
                       ],
                     ),
                   ),

@@ -4,9 +4,9 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
-/// Server-side state only: webhook routes, phone numbers, and records made
-/// during calls that the app hasn't fetched yet. Workspaces (agent, CRM,
-/// meetings, calls) live on the device.
+/// Server-side state only: webhook routes, phone numbers, Google Calendar
+/// grants, and records made during calls that the app hasn't fetched yet.
+/// Workspaces (agent, CRM, meetings, calls) live on the device.
 class FileStore {
   FileStore(this.path);
 
@@ -15,6 +15,7 @@ class FileStore {
     'workspaces': <String, dynamic>{},
     'integrations': <String, dynamic>{},
     'numbers': <String, dynamic>{},
+    'calendars': <String, dynamic>{},
   };
   Future<void> _writes = Future<void>.value();
 
@@ -22,6 +23,9 @@ class FileStore {
       _root['integrations'] as Map<String, dynamic>;
 
   Map<String, dynamic> get _numbers => _root['numbers'] as Map<String, dynamic>;
+
+  Map<String, dynamic> get _calendars =>
+      _root['calendars'] as Map<String, dynamic>;
 
   Future<void> initialize() async {
     final file = File(path);
@@ -52,6 +56,28 @@ class FileStore {
 
   Future<void> saveNumber(String workspaceKey, Map<String, dynamic> number) {
     _numbers[workspaceKey] = number;
+    return _persist();
+  }
+
+  /// The Google Calendar grant for a workspace: `refreshToken`, `email`, and
+  /// `connectedAt`.
+  Map<String, dynamic>? calendar(String workspaceKey) {
+    final value = _calendars[workspaceKey];
+    return value == null
+        ? null
+        : Map<String, dynamic>.from(value as Map<String, dynamic>);
+  }
+
+  Future<void> saveCalendar(
+    String workspaceKey,
+    Map<String, dynamic> calendar,
+  ) {
+    _calendars[workspaceKey] = calendar;
+    return _persist();
+  }
+
+  Future<void> removeCalendar(String workspaceKey) {
+    _calendars.remove(workspaceKey);
     return _persist();
   }
 

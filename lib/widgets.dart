@@ -170,7 +170,7 @@ class IconBadge extends StatelessWidget {
   }
 }
 
-enum PillTone { neutral, accent, success, danger }
+enum PillTone { neutral, outline, accent, success, danger }
 
 class HubPill extends StatelessWidget {
   const HubPill({super.key, required this.label, this.tone = PillTone.neutral});
@@ -182,16 +182,20 @@ class HubPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = switch (tone) {
       PillTone.neutral => HubColors.textMuted,
+      PillTone.outline => HubColors.text,
       PillTone.accent => HubColors.orange,
       PillTone.success => HubColors.success,
       PillTone.danger => HubColors.danger,
     };
+    final outline = tone == PillTone.outline;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: .14),
+        color: outline ? Colors.transparent : color.withValues(alpha: .14),
         borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: color.withValues(alpha: .45)),
+        border: Border.all(
+          color: outline ? color : color.withValues(alpha: .45),
+        ),
       ),
       child: Text(
         label,
