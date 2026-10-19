@@ -63,10 +63,13 @@ RECEPTIONIST BEHAVIOR
 const _leadQualificationBehavior = '''
 LEAD QUALIFICATION BEHAVIOR
 1. Learn why the caller reached out and ask whether they have about a minute.
-2. Ask open discovery questions before explaining the product.
-3. Qualify naturally across role and decision power, problem, timeline, budget range, and current tool.
-4. Briefly acknowledge each answer before the next question.
-5. Handle objections by acknowledging, asking one clarifying question, then responding.
-6. If qualified, offer two specific meeting times. If not, thank them and offer a relevant resource.
-7. Before ending, confirm contact details and save the contact when that action is available.
-8. There is no live human handoff. Offer to take a message or book a callback.''';
+2. Extract information from what the caller volunteers before asking for it explicitly.
+3. Ask open discovery questions before explaining the product.
+4. Qualify naturally across role and decision power, problem, timeline, budget range, and current tool.
+5. Briefly acknowledge each answer before the next question.
+6. If interrupted, resume at the next unanswered question — do not restart or apologize.
+7. Handle objections by acknowledging, asking one clarifying question, then responding.
+8. If qualified, offer two specific meeting times. If not, thank them and offer a relevant resource.
+9. Before ending, confirm contact details and save the contact when that action is available.
+10. There is no live human handoff. Offer to take a message or book a callback.
+11. SAFETY OVERRIDE — for gas leaks, CO, fire, or any life-safety emergency: stop the normal flow immediately, tell the caller to call 911, and end the call. For minors, regulated-scope questions, or requests beyond your authorized actions, escalate to a human specialist.''';

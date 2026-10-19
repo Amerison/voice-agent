@@ -24,6 +24,12 @@ abstract class WorkspaceRepository {
 
   /// The Vapi account's phone number, the app's single source of truth.
   Future<String?> accountNumber();
+
+  /// Send a chat message to the agent; returns the reply text.
+  Future<String> chat(
+    WorkspaceData data,
+    List<Map<String, String>> messages,
+  );
 }
 
 Future<WorkspaceRepository> createRepository() async {
@@ -101,6 +107,15 @@ class LocalWorkspaceRepository implements WorkspaceRepository {
   Future<WorkspaceData> refresh(WorkspaceData data) async {
     await Future<void>.delayed(const Duration(milliseconds: 450));
     return load();
+  }
+
+  @override
+  Future<String> chat(
+    WorkspaceData data,
+    List<Map<String, String>> messages,
+  ) async {
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    return 'This is a demo. Connect to the server to enable live chat.';
   }
 }
 
@@ -185,6 +200,21 @@ class ApiWorkspaceRepository implements WorkspaceRepository {
         as String?;
   }
 
+  @override
+  Future<String> chat(
+    WorkspaceData data,
+    List<Map<String, String>> messages,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/v1/chat'),
+      headers: _headers,
+      body: jsonEncode({'workspace': data.toJson(), 'messages': messages}),
+    );
+    _ensureSuccess(response);
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return payload['reply'] as String? ?? '';
+  }
+
   Future<WorkspaceData> _postWorkspace(String path, WorkspaceData data) async {
     final response = await http.post(
       Uri.parse('$baseUrl$path'),
@@ -236,7 +266,7 @@ WorkspaceData emptyWorkspace() {
       greeting: '',
       guidelines: '',
       knowledgeSources: [],
-      bookMeetingEnabled: true,
+      bookMeetingEnabled: false,
       createContactEnabled: true,
       syncStatus: SyncStatus.draft,
     ),

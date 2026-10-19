@@ -195,7 +195,7 @@ class AgentConfig {
     knowledgeSources: ((json['knowledgeSources'] as List?) ?? const [])
         .map((item) => KnowledgeSource.fromJson(item as Map<String, dynamic>))
         .toList(),
-    bookMeetingEnabled: json['bookMeetingEnabled'] as bool? ?? true,
+    bookMeetingEnabled: json['bookMeetingEnabled'] as bool? ?? false,
     createContactEnabled: json['createContactEnabled'] as bool? ?? true,
     syncStatus: SyncStatus.values.byName(
       json['syncStatus'] as String? ?? 'draft',
