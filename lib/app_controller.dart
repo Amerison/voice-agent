@@ -140,6 +140,9 @@ class AppController extends ChangeNotifier {
     await _run(() async => _data = await repository.refresh(data));
   }
 
+  Future<String> chat(List<Map<String, String>> messages) =>
+      repository.chat(data, messages);
+
   Future<void> saveContact(Contact contact) async {
     final contacts = [...data.contacts];
     final index = contacts.indexWhere((item) => item.id == contact.id);

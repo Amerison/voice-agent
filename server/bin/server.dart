@@ -25,12 +25,15 @@ Future<void> main() async {
   final port = int.tryParse(Platform.environment['PORT'] ?? '') ?? 8080;
   final dataPath = Platform.environment['DATA_FILE'] ?? '.data/store.json';
 
+  final openAiKey = Platform.environment['OPENAI_API_KEY']?.trim() ?? '';
+
   final store = FileStore(dataPath);
   await store.initialize();
   final api = ApiServer(
     store: store,
     vapi: VapiClient(privateKey: privateKey),
     publicBaseUrl: publicBaseUrl,
+    openAiKey: openAiKey,
   );
   final handler = const Pipeline()
       .addMiddleware(logRequests())
@@ -45,6 +48,7 @@ class ApiServer {
     required this.store,
     required this.vapi,
     required this.publicBaseUrl,
+    required this.openAiKey,
   }) {
     router
       ..get('/health', _health)
@@ -54,6 +58,7 @@ class ApiServer {
       ..post('/v1/agent/provision-number', _provisionNumber)
       ..get('/v1/vapi/number', _accountNumber)
       ..post('/v1/calls/refresh', _refreshCalls)
+      ..post('/v1/chat', _chat)
       ..post('/v1/vapi/webhook/<routeId>', _vapiWebhook)
       ..options('/<ignored|.*>', (_) => Response.ok(''));
   }
@@ -61,6 +66,7 @@ class ApiServer {
   final FileStore store;
   final VapiClient vapi;
   final String publicBaseUrl;
+  final String openAiKey;
   final Router router = Router();
 
   Response _health(Request request) => _json(200, {
@@ -391,6 +397,56 @@ class ApiServer {
       return _json(error.statusCode, {'error': error.message});
     } on VapiException catch (error) {
       return _json(502, {'error': 'Vapi: ${error.message}'});
+    }
+  }
+
+  Future<Response> _chat(Request request) async {
+    try {
+      _workspaceKey(request);
+      final body = await _readObject(request);
+      final workspace = _object(body['workspace']);
+      _validateWorkspace(workspace);
+      final messages = (body['messages'] as List? ?? const [])
+          .cast<Map<String, dynamic>>();
+      final agent = _object(workspace['agent']);
+      if (openAiKey.isEmpty) {
+        return _json(503, {'error': 'OpenAI is not configured on this server.'});
+      }
+      final systemPrompt = buildLeadQualificationPrompt(agent);
+      final chatMessages = [
+        {'role': 'system', 'content': systemPrompt},
+        for (final msg in messages)
+          {
+            'role': msg['role'] as String? ?? 'user',
+            'content': msg['content'] as String? ?? '',
+          },
+      ];
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $openAiKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': 'gpt-4o-mini',
+          'messages': chatMessages,
+          'max_tokens': 500,
+        }),
+      );
+      if (response.statusCode != 200) {
+        return _json(502, {'error': 'The AI service returned an error.'});
+      }
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      final choices = payload['choices'] as List?;
+      final reply = choices != null && choices.isNotEmpty
+          ? (choices.first as Map)['message']?['content'] as String? ?? ''
+          : '';
+      return _json(200, {'reply': reply});
+    } on ApiException catch (error) {
+      return _json(error.statusCode, {'error': error.message});
+    } on Object catch (error, stack) {
+      stderr.writeln('Chat failed: $error\n$stack');
+      return _json(500, {'error': 'Chat could not be completed.'});
     }
   }
 

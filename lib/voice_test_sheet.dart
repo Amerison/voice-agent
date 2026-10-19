@@ -33,6 +33,8 @@ enum _VoiceTestState {
   error,
 }
 
+enum _TestMode { call, chat }
+
 class _VoiceTestSheet extends StatefulWidget {
   const _VoiceTestSheet({required this.controller});
 
@@ -54,6 +56,7 @@ class _VoiceTestSheetState extends State<_VoiceTestSheet>
   Timer? _clock;
   int _seconds = 0;
   bool _stopping = false;
+  _TestMode _mode = _TestMode.call;
   final _transcript = VoiceTranscript();
 
   bool get _isActive =>
@@ -292,6 +295,22 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
     }
   }
 
+  Future<void> _switchMode(_TestMode mode) async {
+    if (mode == _mode) return;
+    if (mode == _TestMode.chat) {
+      await _stop();
+    } else {
+      setState(() {
+        _error = null;
+        _seconds = 0;
+        _state = _VoiceTestState.preparing;
+      });
+    }
+    if (!mounted) return;
+    setState(() => _mode = mode);
+    if (mode == _TestMode.call) unawaited(_start());
+  }
+
   Future<void> _retry() async {
     await _events?.cancel();
     _call?.dispose();
@@ -372,82 +391,108 @@ This is a voice test. Do not claim to create contacts or book meetings. Only ans
       child: Scaffold(
         body: Stack(
           children: [
-            const Positioned.fill(child: _CallBackdrop()),
+            if (_mode == _TestMode.call)
+              const Positioned.fill(child: _CallBackdrop()),
             SafeArea(
               child: Column(
                 children: [
-                  const SizedBox(height: 28),
-                  _CallerAvatar(
-                    name: name,
-                    animation: _pulse,
-                    speaking: _state == _VoiceTestState.speaking,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -.4,
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: SegmentedButton<_TestMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: _TestMode.call,
+                          label: Text('Phone Call'),
+                          icon: Icon(CupertinoIcons.phone_fill),
+                        ),
+                        ButtonSegment(
+                          value: _TestMode.chat,
+                          label: Text('Live Chat'),
+                          icon: Icon(CupertinoIcons.bubble_left_fill),
+                        ),
+                      ],
+                      selected: {_mode},
+                      onSelectionChanged: (s) => _switchMode(s.first),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: Text(
-                      _statusLine,
-                      key: ValueKey(_statusLine),
-                      style: TextStyle(
-                        color: HubColors.textMuted,
-                        fontSize: 17,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                  if (_mode == _TestMode.call) ...[
+                    const SizedBox(height: 20),
+                    _CallerAvatar(
+                      name: name,
+                      animation: _pulse,
+                      speaking: _state == _VoiceTestState.speaking,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -.4,
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      child: _middle(),
+                    const SizedBox(height: 4),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: Text(
+                        _statusLine,
+                        key: ValueKey(_statusLine),
+                        style: TextStyle(
+                          color: HubColors.textMuted,
+                          fontSize: 17,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(36, 8, 36, 28),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: over
-                          ? [
-                              _DialButton(
-                                icon: CupertinoIcons.phone_fill,
-                                label: 'Call again',
-                                color: _callGreen,
-                                onTap: _retry,
-                              ),
-                              const SizedBox(width: 56),
-                              _DialButton(
-                                icon: CupertinoIcons.xmark,
-                                label: 'Done',
-                                tooltip: 'Close voice test',
-                                onTap: _close,
-                              ),
-                            ]
-                          : [
-                              _DialButton(
-                                icon: CupertinoIcons.speaker_3_fill,
-                                label: 'Speaker',
-                                selected: _speaker,
-                                onTap: active ? _toggleSpeaker : null,
-                              ),
-                              const SizedBox(width: 56),
-                              _DialButton(
-                                icon: CupertinoIcons.phone_down_fill,
-                                label: 'End',
-                                color: HubColors.danger,
-                                tooltip: 'Close voice test',
-                                onTap: _close,
-                              ),
-                            ],
+                    Expanded(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        child: _middle(),
+                      ),
                     ),
-                  ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(36, 8, 36, 28),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: over
+                            ? [
+                                _DialButton(
+                                  icon: CupertinoIcons.phone_fill,
+                                  label: 'Call again',
+                                  color: _callGreen,
+                                  onTap: _retry,
+                                ),
+                                const SizedBox(width: 56),
+                                _DialButton(
+                                  icon: CupertinoIcons.xmark,
+                                  label: 'Done',
+                                  tooltip: 'Close voice test',
+                                  onTap: _close,
+                                ),
+                              ]
+                            : [
+                                _DialButton(
+                                  icon: CupertinoIcons.speaker_3_fill,
+                                  label: 'Speaker',
+                                  selected: _speaker,
+                                  onTap: active ? _toggleSpeaker : null,
+                                ),
+                                const SizedBox(width: 56),
+                                _DialButton(
+                                  icon: CupertinoIcons.phone_down_fill,
+                                  label: 'End',
+                                  color: HubColors.danger,
+                                  tooltip: 'Close voice test',
+                                  onTap: _close,
+                                ),
+                              ],
+                      ),
+                    ),
+                  ] else
+                    Expanded(
+                      child: _InlineChatBody(controller: widget.controller),
+                    ),
                 ],
               ),
             ),
@@ -792,5 +837,162 @@ class _DialButton extends StatelessWidget {
       ),
     );
     return tooltip == null ? button : Tooltip(message: tooltip, child: button);
+  }
+}
+
+class _InlineChatBody extends StatefulWidget {
+  const _InlineChatBody({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_InlineChatBody> createState() => _InlineChatBodyState();
+}
+
+class _InlineChatBodyState extends State<_InlineChatBody> {
+  final _messages = <Map<String, String>>[];
+  final _input = TextEditingController();
+  final _scroll = ScrollController();
+  bool _thinking = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _input.text.trim();
+    if (text.isEmpty || _thinking) return;
+    _input.clear();
+    setState(() {
+      _messages.add({'role': 'user', 'content': text});
+      _thinking = true;
+      _error = null;
+    });
+    _scrollToBottom();
+    try {
+      final reply = await widget.controller.chat(_messages);
+      if (!mounted) return;
+      setState(() {
+        _messages.add({'role': 'assistant', 'content': reply});
+        _thinking = false;
+      });
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _thinking = false;
+        _error = e.toString();
+      });
+    }
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: _messages.isEmpty && !_thinking
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 36),
+                    child: Text(
+                      'Send a message to chat with the agent.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: HubColors.textMuted),
+                    ),
+                  ),
+                )
+              : ListView(
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                  children: [
+                    for (final msg in _messages)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: msg['role'] == 'user'
+                            ? _UserBubble(child: Text(msg['content'] ?? ''))
+                            : _AgentTurn(text: msg['content'] ?? ''),
+                      ),
+                    if (_thinking)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            _SmallAgentMark(),
+                            SizedBox(width: 12),
+                            Padding(
+                              padding: EdgeInsets.only(top: 7),
+                              child: _ThinkingDots(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: HubColors.danger,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _input,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _send(),
+                  decoration: InputDecoration(
+                    hintText: 'Message…',
+                    hintStyle: TextStyle(color: HubColors.textMuted),
+                    filled: true,
+                    fillColor: HubColors.surfaceRaised,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(22),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              IconButton.filled(
+                onPressed: _thinking ? null : _send,
+                icon: const Icon(CupertinoIcons.arrow_up),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
